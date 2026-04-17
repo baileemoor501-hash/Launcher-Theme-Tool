@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>主题预览图生成工具</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div class="app">
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h2>📁 资源文件</h2>
+      </div>
+
+      <button class="import-btn" id="import-btn">
+        📥 导入文件夹
+      </button>
+
+      <input id="file-input" type="file" style="display: none" webkitdirectory="" directory="" multiple />
+
+      <div class="file-tree" id="file-tree">
+        <div class="empty-state">
+          <p>请导入主题资源文件夹</p>
+          <p class="hint">支持包含图标和壁纸的完整文件夹</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 工作区 -->
+    <main class="workspace">
+      <div class="workspace-header">
+        <h2>工作区 - 预览效果</h2>
+      </div>
+
+      <div class="phone-simulator">
+        <div class="phone-frame" id="phone-frame">
+          <div class="phone-inner">
+            <div class="phone-screen">
+              <div class="status-bar">
+                <span id="current-time">9:41</span>
+                <span>📶 🔋</span>
+              </div>
+              <div class="phone-content">
+                <img class="wallpaper" id="wallpaper" alt="壁纸" style="display: none" />
+                <div class="grid-container" id="grid-container">
+                  <div class="grid-overlay" id="grid-overlay">
+                    <!-- 网格将通过 JavaScript 动态生成 -->
+                  </div>
+
+                  <div class="grid-items" id="grid-items">
+                    <!-- 网格项将通过 JavaScript 动态生成 -->
+                  </div>
+                </div>
+
+                <div class="dock" id="dock">
+                  <div class="dock-icon">
+                  </div>
+                  <div class="dock-icon">
+                  </div>
+                  <div class="dock-icon">
+                  </div>
+                  <div class="dock-icon">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="workspace-hint">
+        💡 拖拽图标可自由排列，自动吸附到网格
+      </div>
+    </main>
+
+    <!-- 设置面板 -->
+    <div class="settings-panel">
+      <div class="settings-header">
+        <h2>⚙️ 设置</h2>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label">文字颜色</label>
+        <div class="color-picker">
+          <input type="color" id="text-color" value="#FFFFFF" />
+          <span class="color-value" id="text-color-value">#FFFFFF</span>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label">图标大小</label>
+        <div class="slider-container">
+          <input type="range" id="icon-size" min="40" max="80" value="56" />
+          <span class="slider-value" id="icon-size-value">56px</span>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label">网格设置</label>
+        <div class="toggle-row">
+          <span>显示网格</span>
+          <label class="toggle">
+            <input type="checkbox" id="show-grid" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <label class="settings-label">吸附阈值</label>
+        <div class="slider-container">
+          <input type="range" id="snap-threshold" min="10" max="50" value="24" />
+          <span class="slider-value" id="snap-threshold-value">24px</span>
+        </div>
+      </div>
+
+      <button class="export-btn" id="export-btn">
+        💾 保存并导出
+      </button>
+
+      <div class="export-info">
+        <p>导出格式: PNG + ZIP</p>
+        <p>分辨率: 1080×2340</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+
+</html>
