@@ -290,19 +290,6 @@ function renderGridItems() {
 function renderDockItems() {
   const dockElement = document.getElementById('dock');
   if (!dockElement) return;
-
-  // 使用文档片段提高性能
-  const fragment = document.createDocumentFragment();
-  state.gridItems
-    .filter(item => item.gridPosition.row >= GRID_CONFIG.rows)
-    .forEach(item => {
-      const itemElement = document.createElement('div');
-      itemElement.innerHTML = renderDockItem(item);
-      fragment.appendChild(itemElement.firstChild);
-    });
-
-  dockElement.innerHTML = '';
-  dockElement.appendChild(fragment);
 }
 
 function renderGridItem(item) {
