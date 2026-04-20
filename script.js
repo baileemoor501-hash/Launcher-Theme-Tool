@@ -94,7 +94,9 @@ function createDefaultGridItems() {
 
 // 状态更新函数
 function setFiles(files) {
+  console.log('Setting files:', files);
   state.files = files;
+  console.log('State files after setting:', state.files);
   renderFileTree();
 }
 
@@ -155,7 +157,12 @@ function resetGrid() {
 // 模块: DOM 操作
 function renderFileTree() {
   const fileTreeElement = document.getElementById('file-tree');
-  if (!fileTreeElement) return;
+  if (!fileTreeElement) {
+    console.log('File tree element not found');
+    return;
+  }
+
+  console.log('Rendering file tree with files:', state.files);
 
   if (state.files.length === 0) {
     fileTreeElement.innerHTML = `
@@ -172,19 +179,23 @@ function renderFileTree() {
   state.files.forEach(node => {
     const nodeElement = document.createElement('div');
     nodeElement.innerHTML = renderTreeNode(node, 0);
-    fragment.appendChild(nodeElement.firstChild);
+    while (nodeElement.firstChild) {
+      fragment.appendChild(nodeElement.firstChild);
+    }
   });
 
   fileTreeElement.innerHTML = '';
   fileTreeElement.appendChild(fragment);
 
   // 添加事件监听器
-  document.querySelectorAll('.tree-node').forEach(node => {
+  fileTreeElement.querySelectorAll('.tree-node').forEach(node => {
     node.addEventListener('click', handleTreeNodeClick);
     if (node.dataset.draggable === 'true') {
       node.addEventListener('dragstart', handleDragStart);
     }
   });
+
+  console.log('File tree rendered successfully');
 }
 
 function renderTreeNode(node, level) {
@@ -197,12 +208,22 @@ function renderTreeNode(node, level) {
     <div>
       <div
         class="tree-node ${isSelected ? 'selected' : ''}"
-        style="padding-left: ${level * 16}px"
         data-id="${node.id}"
         data-type="${node.type}"
         data-draggable="${!isFolder && !!node.url}"
         ${!isFolder && !!node.url ? 'draggable="true"' : ''}
       >
+        <div class="tree-node-content">
+          <span class="tree-icon">
+            ${isFolder ? '📁' : '📄'}
+          </span>
+          <span class="tree-name">${node.name}</span>
+        </div>
+        ${node.url ? `
+          <span class="tree-preview">
+            <img src="${node.url}" alt="${node.name}" />
+          </span>
+        ` : ''}
         ${hasChildren ? `
           <span class="tree-toggle">
             ${isExpanded ? '▼' : '▶'}
@@ -210,15 +231,6 @@ function renderTreeNode(node, level) {
         ` : `
           <span class="tree-toggle-placeholder"></span>
         `}
-        <span class="tree-icon">
-          ${isFolder ? '📁' : '📄'}
-        </span>
-        <span class="tree-name">${node.name}</span>
-        ${node.url ? `
-          <span class="tree-preview">
-            <img src="${node.url}" alt="${node.name}" />
-          </span>
-        ` : ''}
       </div>
       ${hasChildren && isExpanded ? `
         <div class="tree-children">
@@ -278,6 +290,19 @@ function renderGridItems() {
 function renderDockItems() {
   const dockElement = document.getElementById('dock');
   if (!dockElement) return;
+
+  // 使用文档片段提高性能
+  const fragment = document.createDocumentFragment();
+  state.gridItems
+    .filter(item => item.gridPosition.row >= GRID_CONFIG.rows)
+    .forEach(item => {
+      const itemElement = document.createElement('div');
+      itemElement.innerHTML = renderDockItem(item);
+      fragment.appendChild(itemElement.firstChild);
+    });
+
+  dockElement.innerHTML = '';
+  dockElement.appendChild(fragment);
 }
 
 function renderGridItem(item) {
@@ -433,14 +458,24 @@ function handleDrop(e) {
 
 function handleFileChange(e) {
   const fileList = e.target.files;
+  console.log('File change event:', fileList);
   if (!fileList || fileList.length === 0) return;
 
+  console.log('Number of files:', fileList.length);
   parseFiles(fileList).then(parsedFiles => {
+    console.log('Parsed files received:', parsedFiles);
     setFiles(parsedFiles);
     const wallpaperUrl = findWallpaper(parsedFiles);
     if (wallpaperUrl) {
       setWallpaper(wallpaperUrl);
     }
+
+    // 自动填充图标到网格
+    const iconFiles = collectIconFiles(parsedFiles);
+    console.log('Collected icon files:', iconFiles);
+    autoFillIcons(iconFiles);
+  }).catch(error => {
+    console.error('Error parsing files:', error);
   });
 }
 
@@ -483,34 +518,102 @@ function findFileNodeById(nodes, id) {
   return null;
 }
 
+// 收集所有图标文件（按子文件顺序）
+function collectIconFiles(nodes) {
+  const iconFiles = [];
+
+  function traverse(node) {
+    if (node.type === 'file' && isImageFile(node.name) && !isExcludedFile(node.name) && node.url) {
+      iconFiles.push(node);
+      console.log('Added icon file:', node.name, node.url);
+    }
+    if (node.type === 'folder' && node.children) {
+      // 按名称排序子节点
+      node.children.sort((a, b) => a.name.localeCompare(b.name));
+      node.children.forEach(child => traverse(child));
+    }
+  }
+
+  nodes.forEach(node => traverse(node));
+  console.log('Total icon files collected:', iconFiles.length);
+  return iconFiles;
+}
+
+// 检查是否为排除的文件
+function isExcludedFile(filename) {
+  const lowerName = filename.toLowerCase();
+  return lowerName.includes('wallpaper') || lowerName.includes('iconback') || lowerName.includes('iconmask');
+}
+
+// 处理图标名称
+function processIconName(filename) {
+  // 移除文件扩展名
+  const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+  // 按_分割，取最后一个单词
+  const parts = nameWithoutExt.split('_');
+  const lastWord = parts[parts.length - 1];
+  // 首字母大写
+  return lastWord.charAt(0).toUpperCase() + lastWord.slice(1);
+}
+
+// 自动填充图标到网格
+function autoFillIcons(iconFiles) {
+  // 清空现有的图标（保留widget和dock）
+  state.gridItems = state.gridItems.filter(item =>
+    item.type === 'widget' || item.gridPosition.row >= GRID_CONFIG.rows
+  );
+
+  // 计算可用的网格位置
+  let row = 2; // 从第二行开始，widget在第1行
+  let col = 0;
+
+  iconFiles.forEach((iconFile, index) => {
+    // 跳过dock区域
+    if (row >= GRID_CONFIG.rows) return;
+
+    const processedName = processIconName(iconFile.name);
+
+    addGridItem({
+      id: `icon-${Date.now()}-${index}`,
+      type: 'icon',
+      name: processedName,
+      url: iconFile.url,
+      gridPosition: { row, col },
+      size: { width: 1, height: 1 },
+    });
+
+    // 移动到下一个位置
+    col++;
+    if (col >= GRID_CONFIG.cols) {
+      col = 0;
+      row++;
+    }
+  });
+}
+
 function parseFiles(fileList) {
   return new Promise((resolve) => {
-    const rootMap = new Map();
-    const allFiles = [];
+    const root = [];
 
-    // 收集所有文件
+    // 构建文件树
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
       const path = file.webkitRelativePath || file.name;
-      allFiles.push({ file, path });
-    }
-
-    // 按路径排序
-    allFiles.sort((a, b) => a.path.localeCompare(b.path));
-
-    // 构建文件树
-    for (const { file, path } of allFiles) {
       const parts = path.split('/').filter(Boolean);
-      let currentMap = rootMap;
 
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        const isFile = i === parts.length - 1;
+      if (parts.length === 0) continue;
 
-        let node = currentMap.get(part);
+      let currentLevel = root;
+
+      for (let j = 0; j < parts.length; j++) {
+        const part = parts[j];
+        const isFile = j === parts.length - 1;
+
+        // 查找当前级别的节点
+        let node = currentLevel.find(n => n.name === part);
         if (!node) {
           node = {
-            id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            id: `file-${Date.now()}-${i}-${j}`,
             name: part,
             type: isFile ? 'file' : 'folder',
             children: isFile ? undefined : [],
@@ -521,46 +624,46 @@ function parseFiles(fileList) {
             node.url = URL.createObjectURL(file);
           }
 
-          currentMap.set(part, node);
+          currentLevel.push(node);
         }
 
         if (!isFile) {
           if (!node.children) {
             node.children = [];
           }
-          currentMap = new Map(
-            node.children.map(child => [child.name, child])
-          );
+          currentLevel = node.children;
         }
       }
     }
 
-    // 将Map转换为数组
-    const convertMapToArray = (map) => {
-      return Array.from(map.values()).map(node => {
+    // 按名称排序
+    const sortNodes = (nodes) => {
+      nodes.sort((a, b) => {
+        // 文件夹排在前面
+        if (a.type === 'folder' && b.type === 'file') return -1;
+        if (a.type === 'file' && b.type === 'folder') return 1;
+        // 按名称排序
+        return a.name.localeCompare(b.name);
+      });
+      // 递归排序子文件夹
+      nodes.forEach(node => {
         if (node.type === 'folder' && node.children) {
-          const childMap = new Map(
-            node.children.map(child => [child.name, child])
-          );
-          return {
-            ...node,
-            children: convertMapToArray(childMap),
-          };
+          sortNodes(node.children);
         }
-        return node;
       });
     };
 
-    const result = convertMapToArray(rootMap);
+    sortNodes(root);
 
     // 默认展开顶层文件夹
-    result.forEach(node => {
+    root.forEach(node => {
       if (node.type === 'folder') {
         state.expandedFolders.add(node.id);
       }
     });
 
-    resolve(result);
+    console.log('Parsed files:', root);
+    resolve(root);
   });
 }
 
