@@ -276,7 +276,7 @@ body {
   z-index: 10;
   display: flex;
   justify-content: space-between;
-  padding: calc(var(--phone-width) * 0.014) calc(var(--phone-width) * 0.044);
+  padding: calc(var(--phone-width) * 0.014) calc(var(--phone-width) * 0.06);
   font-size: calc(var(--phone-width) * 0.036);
   font-weight: 600;
   color: white;
@@ -285,83 +285,50 @@ body {
 .grid-container {
   position: relative;
   z-index: 5;
-  display: grid;
-  grid-template-rows: repeat(6, 1fr);
-  gap: calc(var(--phone-width) * 0.044);
+  display: flex;
+  flex-direction: column;
   padding: calc(var(--phone-width) * 0.067);
-  min-height: calc(var(--phone-height) * 0.625);
+  min-height: calc(var(--phone-height) * 0.9);
+  justify-content: space-between;
+  gap: calc(var(--phone-width) * 0.067);
 }
 
-.grid-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: grid;
-  grid-template-rows: repeat(6, 1fr);
-  gap: calc(var(--phone-width) * 0.044);
-  padding: calc(var(--phone-width) * 0.067);
-  pointer-events: none;
-}
-
-.grid-row {
+.app-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: calc(var(--phone-width) * 0.044);
-}
-
-.grid-cell {
-  border: 1px dashed rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
-}
-
-.grid-items {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  grid-template-rows: repeat(4, 1fr);
-  gap: calc(var(--phone-width) * 0.044);
+  grid-column-gap: calc(var(--phone-width) * 0.044);
+  grid-row-gap: calc(var(--phone-width) * 0.064);
+  /* 上下间距 */
   position: relative;
   z-index: 10;
+  align-self: stretch;
+}
+
+.grid-item-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--phone-width) * 0.011);
 }
 
 .grid-item {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: calc(var(--phone-width) * 0.011);
-  padding: calc(var(--phone-width) * 0.022);
-}
-
-.grid-item.widget {
-  grid-column: span 4;
-}
-
-.widget-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: calc(var(--phone-width) * 0.044);
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(10px);
-  border-radius: calc(var(--phone-width) * 0.044);
-  width: 100%;
-}
-
-.time-display {
-  font-size: calc(var(--phone-width) * 0.133);
-  font-weight: 200;
-  letter-spacing: calc(var(--phone-width) * 0.006);
-}
-
-.date-display {
-  font-size: calc(var(--phone-width) * 0.039);
-  opacity: 0.8;
-  margin-top: calc(var(--phone-width) * 0.011);
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border-radius: calc(var(--phone-width) * 0.039);
+  aspect-ratio: 1;
+  width: 56px;
+  height: 56px;
 }
 
 .icon-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--phone-width) * 0.067);
   background: linear-gradient(135deg, var(--accent), var(--success));
   border-radius: calc(var(--phone-width) * 0.039);
 }
@@ -374,33 +341,26 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  color: white;
 }
 
-.dock {
-  position: absolute;
-  bottom: calc(var(--phone-width) * 0.06);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
+.circles-container {
   display: flex;
-  justify-content: space-around;
-  gap: calc(var(--phone-width) * 0.044);
-  padding: calc(var(--phone-width) * 0.033) calc(var(--phone-width) * 0.067);
-  background: #4c4c4c81;
-  backdrop-filter: blur(20px);
-  border-radius: calc(var(--phone-width) * 0.072);
-  width: calc(100% - 2 * var(--phone-width) * 0.06);
-  height: calc(var(--phone-width) * 0.206);
-}
-
-.dock-icon {
-  display: flex;
-  align-items: center;
   justify-content: center;
-  width: calc(var(--phone-width) * 0.139);
-  height: calc(var(--phone-width) * 0.139);
-  border: 1px dashed rgba(255, 255, 255);
-  border-radius: calc(var(--phone-width) * 0.033);
+  gap: calc(var(--phone-width) * 0.022);
+  margin-bottom: calc(var(--phone-width) * 0.005);
+}
+
+.circle {
+  width: calc(var(--phone-width) * 0.022);
+  height: calc(var(--phone-width) * 0.022);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+}
+
+.circle.active {
+  background: white;
+  border-color: white;
 }
 
 .settings-panel {
@@ -493,6 +453,10 @@ body {
   padding: 12px;
   background: var(--bg-tertiary);
   border-radius: 8px;
+}
+
+.toggle-row span {
+  font-size: 14px;
 }
 
 .toggle {
