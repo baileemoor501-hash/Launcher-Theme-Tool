@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
   textColor: '#FFFFFF',
   iconSize: 56,
   showGrid: true,
+  showText: true,
   snapThreshold: 24,
 };
 
@@ -183,7 +184,7 @@ function renderGridOverlay() {
   const containerHeight = gridContainer.clientHeight;
   const padding = parseFloat(getComputedStyle(gridContainer).paddingLeft);
 
-  // 计算四条竖线的位置（居中分布，间距72px）
+  // 计算四条竖线的位置（居中分布，间距76px）
   const lineCount = 4;
   const spacing = 76;
   const totalLineWidth = (lineCount - 1) * spacing;
@@ -278,21 +279,26 @@ function updateSettingsUI() {
   document.getElementById('icon-size').value = state.settings.iconSize;
   document.getElementById('icon-size-value').textContent = `${state.settings.iconSize}px`;
   document.getElementById('show-grid').checked = state.settings.showGrid;
+  document.getElementById('show-text').checked = state.settings.showText;
   document.getElementById('snap-threshold').value = state.settings.snapThreshold;
   document.getElementById('snap-threshold-value').textContent = `${state.settings.snapThreshold}px`;
 
-  // 更新所有icon-label的文字颜色
+  // 更新所有icon-label的文字颜色和显示状态
   document.querySelectorAll('.icon-label').forEach(label => {
     label.style.color = state.settings.textColor;
+    // 检查是否是dock栏的icon-label（dock栏的始终隐藏）
+    const isDockItem = label.closest('.grid-item-container[style*="top: 96.2%"]');
+    if (!isDockItem) {
+      label.style.visibility = state.settings.showText ? 'visible' : 'hidden';
+    }
   });
 
-  // 更新所有grid-item的大小（排除特殊的grid-item）
+  // 更新所有grid-item的大小和边框
   document.querySelectorAll('.grid-item').forEach(item => {
-    // 排除第52-55行的特殊grid-item（具有width: 100%和height: 168px内联样式的）
-    if (!item.style.width || item.style.width !== '100%') {
-      item.style.width = `${state.settings.iconSize}px`;
-      item.style.height = `${state.settings.iconSize}px`;
-    }
+    item.style.width = `${state.settings.iconSize}px`;
+    item.style.height = `${state.settings.iconSize}px`;
+    // 根据showGrid设置控制边框显示/隐藏，使用透明边框保持尺寸不变
+    item.style.border = state.settings.showGrid ? '1px dashed rgba(255, 255, 255, 0.2)' : '1px dashed transparent';
   });
 }
 
@@ -387,6 +393,7 @@ function handleSettingsChange() {
     textColor: document.getElementById('text-color').value,
     iconSize: parseInt(document.getElementById('icon-size').value),
     showGrid: document.getElementById('show-grid').checked,
+    showText: document.getElementById('show-text').checked,
     snapThreshold: parseInt(document.getElementById('snap-threshold').value),
   });
 }
@@ -704,6 +711,11 @@ function fillIconGrids(imageFiles) {
 
   let fileIndex = 0;
 
+  // 为所有网格容器添加索引
+  gridContainers.forEach((container, index) => {
+    container.dataset.index = index.toString();
+  });
+
   // 填充网格
   gridContainers.forEach(container => {
     if (fileIndex < imageFiles.length) {
@@ -716,6 +728,13 @@ function fillIconGrids(imageFiles) {
         gridItem.style.backgroundSize = 'contain';
         gridItem.style.backgroundPosition = 'center';
         gridItem.style.backgroundRepeat = 'no-repeat';
+        // 添加拖拽功能
+        gridItem.draggable = true;
+        gridItem.dataset.url = file.url;
+        gridItem.dataset.name = file.name;
+
+        // 添加删除图标
+        addDeleteIcon(gridItem);
       }
 
       if (iconLabel) {
@@ -725,6 +744,164 @@ function fillIconGrids(imageFiles) {
       fileIndex++;
     }
   });
+
+  // 为所有网格项添加拖拽事件监听器
+  addGridItemDragListeners();
+}
+
+function addDeleteIcon(gridItem) {
+  // 先移除已有的删除图标
+  const existingDeleteIcon = gridItem.querySelector('.delete-icon');
+  if (existingDeleteIcon) {
+    existingDeleteIcon.remove();
+  }
+
+  // 创建删除图标元素
+  const deleteIcon = document.createElement('div');
+  deleteIcon.className = 'delete-icon';
+
+  // 添加点击事件
+  deleteIcon.addEventListener('click', (e) => {
+    e.stopPropagation(); // 阻止事件冒泡
+    // 清除图标的背景和数据
+    gridItem.style.backgroundImage = '';
+    gridItem.dataset.url = '';
+    gridItem.dataset.name = '';
+    gridItem.draggable = false;
+
+    // 清除标签文本
+    const iconLabel = gridItem.nextElementSibling;
+    if (iconLabel && iconLabel.classList.contains('icon-label')) {
+      iconLabel.textContent = '';
+    }
+
+    // 移除删除图标
+    deleteIcon.remove();
+  });
+
+  gridItem.appendChild(deleteIcon);
+}
+
+function addGridItemDragListeners() {
+  // 为所有grid-item添加dragstart事件
+  document.querySelectorAll('.grid-item').forEach(item => {
+    if (item.draggable) {
+      item.addEventListener('dragstart', handleGridItemDragStart);
+    }
+  });
+
+  // 为所有grid-item-container添加dragover和drop事件
+  document.querySelectorAll('.grid-item-container').forEach(container => {
+    container.addEventListener('dragover', handleGridItemDragOver);
+    container.addEventListener('drop', handleGridItemDrop);
+  });
+}
+
+function handleGridItemDragStart(e) {
+  const item = e.currentTarget;
+  // 存储拖拽元素的引用
+  e.dataTransfer.setData('text/plain', JSON.stringify({
+    url: item.dataset.url,
+    name: item.dataset.name
+  }));
+  // 存储拖拽元素的容器
+  e.dataTransfer.setData('text/html', item.parentElement.dataset.index);
+  // 添加拖拽时的视觉反馈
+  item.style.opacity = '0.5';
+}
+
+function handleGridItemDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function handleGridItemDrop(e) {
+  e.preventDefault();
+  const data = e.dataTransfer.getData('text/plain');
+  const sourceIndex = e.dataTransfer.getData('text/html');
+  if (!data) return;
+
+  try {
+    const item = JSON.parse(data);
+    const targetContainer = e.currentTarget;
+    const targetGridItem = targetContainer.querySelector('.grid-item');
+    const targetIconLabel = targetContainer.querySelector('.icon-label');
+
+    // 检查是否是同一个容器
+    if (targetContainer.dataset.index === sourceIndex) {
+      // 恢复拖拽元素的透明度
+      document.querySelectorAll('.grid-item').forEach(gridItem => {
+        gridItem.style.opacity = '1';
+      });
+      return;
+    }
+
+    // 保存目标位置的原始内容
+    const originalUrl = targetGridItem.dataset.url;
+    const originalName = targetGridItem.dataset.name;
+
+    // 将拖拽的图标内容移动到目标位置
+    targetGridItem.style.backgroundImage = `url(${item.url})`;
+    targetGridItem.style.backgroundSize = 'contain';
+    targetGridItem.style.backgroundPosition = 'center';
+    targetGridItem.style.backgroundRepeat = 'no-repeat';
+    targetGridItem.dataset.url = item.url;
+    targetGridItem.dataset.name = item.name;
+    targetGridItem.draggable = true;
+
+    if (targetIconLabel) {
+      targetIconLabel.textContent = getIconLabel(item.name);
+    }
+
+    // 为目标位置添加删除图标
+    addDeleteIcon(targetGridItem);
+
+    // 找到源容器并更新其内容
+    if (sourceIndex) {
+      const sourceContainer = document.querySelector(`.grid-item-container[data-index="${sourceIndex}"]`);
+      if (sourceContainer) {
+        const sourceGridItem = sourceContainer.querySelector('.grid-item');
+        const sourceIconLabel = sourceContainer.querySelector('.icon-label');
+
+        if (sourceGridItem) {
+          if (originalUrl) {
+            sourceGridItem.style.backgroundImage = `url(${originalUrl})`;
+            sourceGridItem.dataset.url = originalUrl;
+            sourceGridItem.dataset.name = originalName;
+            sourceGridItem.draggable = true;
+            // 为源位置添加删除图标
+            addDeleteIcon(sourceGridItem);
+          } else {
+            sourceGridItem.style.backgroundImage = '';
+            sourceGridItem.dataset.url = '';
+            sourceGridItem.dataset.name = '';
+            sourceGridItem.draggable = false;
+            // 移除源位置的删除图标
+            const sourceDeleteIcon = sourceGridItem.querySelector('.delete-icon');
+            if (sourceDeleteIcon) {
+              sourceDeleteIcon.remove();
+            }
+          }
+        }
+
+        if (sourceIconLabel) {
+          if (originalName) {
+            sourceIconLabel.textContent = getIconLabel(originalName);
+          } else {
+            sourceIconLabel.textContent = '';
+          }
+        }
+      }
+    }
+
+    // 恢复所有元素的透明度
+    document.querySelectorAll('.grid-item').forEach(gridItem => {
+      gridItem.style.opacity = '1';
+    });
+
+  } catch (err) {
+    console.error('Failed to parse drag data:', err);
+  }
 }
 
 function exportTheme(previewBlob, files) {
@@ -770,9 +947,10 @@ function init() {
 
   document.getElementById('file-input').addEventListener('change', handleFileChange);
 
-  document.getElementById('text-color').addEventListener('change', handleSettingsChange);
+  document.getElementById('text-color').addEventListener('input', handleSettingsChange);
   document.getElementById('icon-size').addEventListener('input', handleSettingsChange);
   document.getElementById('show-grid').addEventListener('change', handleSettingsChange);
+  document.getElementById('show-text').addEventListener('change', handleSettingsChange);
   document.getElementById('snap-threshold').addEventListener('input', handleSettingsChange);
 
   document.getElementById('export-btn').addEventListener('click', handleExport);
