@@ -7,6 +7,7 @@
   <title>Launcher 主题工具</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 </head>
 
 <body>
@@ -21,12 +22,17 @@
         📥 导入文件夹
       </button>
 
-      <input id="file-input" type="file" style="display: none" webkitdirectory="" directory="" multiple />
+      <button class="import-btn" id="import-zip-btn">
+        📦 导入 zip 包
+      </button>
+
+      <input id="file-input" type="file" style="display: none" multiple webkitdirectory directory />
+      <input id="zip-input" type="file" style="display: none" accept=".zip" />
 
       <div class="file-tree" id="file-tree">
         <div class="empty-state">
-          <p>请导入主题资源文件夹</p>
-          <p class="hint">支持包含图标和壁纸的完整文件夹</p>
+          <p>支持导入包含图标和壁纸的文件夹、</p>
+          <p>widget的zip包</p>
         </div>
       </div>
     </div>
@@ -43,108 +49,134 @@
             <div class="phone-screen">
               <div class="status-bar">
                 <span id="current-time">9:41</span>
-                <span>📶 🔋</span>
+                <span><svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                    <rect x="0" y="21" width="3" height="3" />
+                    <rect x="4" y="17" width="3" height="7" />
+                    <rect x="8" y="13" width="3" height="11" />
+                    <rect x="12" y="9" width="3" height="15" />
+                    <rect x="16" y="5" width="3" height="19" />
+                  </svg><svg width="14" height="14" viewBox="0 0 24 24" fill="white">
+                    <rect x="5" y="6" width="12" height="18" rx="1" />
+                    <rect x="9" y="3" width="4" height="3" />
+                  </svg></span>
               </div>
               <div class="phone-content"></div>
               <img class="wallpaper" id="wallpaper" alt="壁纸" style="display: none" />
               <div class="grid-container" id="grid-container">
                 <!-- 应用图标网格 -->
-                <!-- <div class="grid-item-container" style="top: 93px; left: 50%; width: 100%; height: 168px;">
-                    <div class="grid-item" style="width: 100%; height: 168px;"></div>
-                  </div> -->
-                <div class="grid-item-container" style="top: 8.4%; left: 16.2%;">
+                <div class="grid-item-container custom-container-4 initially-hidden" style="top: 3%; left: 8%;">
+                  <div class="grid-item custom-size-4""></div>
+                  <div class=" icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container custom-container-4" style="top: 17.1%; left: 8%;">
+                  <div class="grid-item custom-size-4""></div>
+                  <div class=" icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container custom-container-4 initially-hidden" style="top: 31.1%; left: 8%;">
+                  <div class="grid-item custom-size-4""></div>
+                  <div class=" icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container custom-container-4 initially-hidden" style="top: 45.4%; left: 8%;">
+                  <div class="grid-item custom-size-4""></div>
+                  <div class=" icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container custom-container-4 initially-hidden" style="top: 59.6%; left: 8%;">
+                  <div class="grid-item custom-size-4""></div>
+                  <div class=" icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 8.4%; left: 16.2%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 8.4%; left: 38.8%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 8.4%; left: 61.4%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 8.4%; left: 83.9%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 22.5%; left: 16.2%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 22.5%; left: 38.8%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 22.5%; left: 61.4%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 22.5%; left: 83.9%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 36.5%; left: 16.2%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 36.5%; left: 38.8%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 36.5%; left: 61.4%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 36.5%; left: 83.9%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 50.8%; left: 16.2%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 50.8%; left: 38.8%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 50.8%; left: 61.4%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container initially-hidden" style="top: 50.8%; left: 83.9%;">
+                  <div class="grid-item"></div>
+                  <div class="icon-label" style="visibility: hidden;">Messages</div>
+                </div>
+                <div class="grid-item-container" style="top: 64.9%; left: 16.2%;">
                   <div class="grid-item"></div>
                   <div class="icon-label">Messages</div>
                 </div>
-                <div class="grid-item-container" style="top: 8.4%; left: 38.8%;">
+                <div class="grid-item-container" style="top: 64.9%; left: 38.8%;">
                   <div class="grid-item"></div>
                   <div class="icon-label">Messages</div>
                 </div>
-                <div class="grid-item-container" style="top: 8.4%; left: 61.4%;">
+                <div class="grid-item-container" style="top: 64.9%; left: 61.4%;">
                   <div class="grid-item"></div>
                   <div class="icon-label">Messages</div>
                 </div>
-                <div class="grid-item-container" style="top: 8.4%; left: 84%;">
+                <div class="grid-item-container" style="top: 64.9%; left: 83.9%;">
                   <div class="grid-item"></div>
                   <div class="icon-label">Messages</div>
                 </div>
-                <div class="grid-item-container" style="top: 21.4%; left: 16.2%;">
+                <div class="grid-item-container" style="top: 79.2%; left: 16.2%;">
                   <div class="grid-item"></div>
                   <div class="icon-label">Messages</div>
                 </div>
-                <div class="grid-item-container" style="top: 21.4%; left: 38.8%;">
+                <div class="grid-item-container" style="top: 79.2%; left: 38.8%;">
                   <div class="grid-item"></div>
                   <div class="icon-label">Messages</div>
                 </div>
-                <div class="grid-item-container" style="top: 21.4%; left: 61.4%;">
+                <div class="grid-item-container" style="top: 79.2%; left: 61.4%;">
                   <div class="grid-item"></div>
                   <div class="icon-label">Messages</div>
                 </div>
-                <div class="grid-item-container" style="top: 21.4%; left: 84%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 35.6%; left: 16.2%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 35.6%; left: 38.8%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 35.6%; left: 61.4%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 35.6%; left: 84%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 50%; left: 16.2%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 50%; left: 38.8%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 50%; left: 61.4%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 50%; left: 84%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 64.7%; left: 16.2%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 64.7%; left: 38.8%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 64.7%; left: 61.4%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 64.7%; left: 84%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 79%; left: 16.2%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 79%; left: 38.8%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 79%; left: 61.4%;">
-                  <div class="grid-item"></div>
-                  <div class="icon-label">Messages</div>
-                </div>
-                <div class="grid-item-container" style="top: 79%; left: 84%;">
+                <div class="grid-item-container" style="top: 79.2%; left: 83.9%;">
                   <div class="grid-item"></div>
                   <div class="icon-label">Messages</div>
                 </div>
@@ -156,19 +188,19 @@
                 </div>
 
                 <!-- dock栏 -->
-                <div class="grid-item-container" style="top: 96.2%; left: 16.2%;">
+                <div class="grid-item-container" style="top: 96.6%; left: 16.2%;">
                   <div class="grid-item"></div>
                   <div class="icon-label" style="display: none;">Settings</div>
                 </div>
-                <div class="grid-item-container" style="top: 96.2%; left: 38.8%;">
+                <div class="grid-item-container" style="top: 96.6%; left: 38.8%;">
                   <div class="grid-item"></div>
                   <div class="icon-label" style="display: none;">Settings</div>
                 </div>
-                <div class="grid-item-container" style="top: 96.2%; left: 61.4%;">
+                <div class="grid-item-container" style="top: 96.6%; left: 61.4%;">
                   <div class="grid-item"></div>
                   <div class="icon-label" style="display: none;">Settings</div>
                 </div>
-                <div class="grid-item-container" style="top: 96.2%; left: 84%;">
+                <div class="grid-item-container" style="top: 96.6%; left: 83.9%;">
                   <div class="grid-item"></div>
                   <div class="icon-label" style="display: none;">Settings</div>
                 </div>
