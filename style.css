@@ -315,10 +315,19 @@ body {
   align-items: center;
   gap: calc(var(--phone-width) * 0.011);
   transform: translate(-50%, -50%);
+  z-index: 1;
 }
 
 .grid-item-container.custom-container-4 {
   transform: none;
+}
+
+.grid-item-container.has-content {
+  z-index: 2;
+}
+
+.grid-item-container.custom-container-4.has-content {
+  z-index: 3;
 }
 
 .grid-item-container.custom-container-4.hidden {
@@ -357,6 +366,61 @@ body {
   aspect-ratio: auto;
   width: 284px;
   height: 142px;
+}
+
+.weather-widget {
+  background: transparent;
+  border: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 0 10px;
+}
+
+.weather-time {
+  font-size: 56px;
+  font-weight: medium;
+  line-height: 1;
+  letter-spacing: 2px;
+}
+
+.weather-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-top: 4px;
+  gap: 10px;
+}
+
+.weather-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.weather-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.weather-date-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.weather-date {
+  text-align: right;
+}
+
+.weather-weekday {
+  text-align: right;
 }
 
 .delete-icon {

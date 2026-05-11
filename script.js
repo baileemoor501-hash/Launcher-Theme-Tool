@@ -539,11 +539,27 @@ function handleDrop(e) {
     const item = JSON.parse(data);
     const targetContainer = e.currentTarget;
 
+    if (item.isFromCustomContainer && !targetContainer.classList.contains('custom-container-4')) {
+      return;
+    }
+
     if (targetContainer.classList.contains('custom-container-4')) {
       const gridItem = targetContainer.querySelector('.grid-item');
       const iconLabel = targetContainer.querySelector('.icon-label');
 
       if (gridItem) {
+        if (gridItem.classList.contains('weather-widget')) {
+          gridItem.innerHTML = '';
+          gridItem.classList.remove('weather-widget');
+          gridItem.style.background = '';
+          gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+          gridItem.style.flexDirection = '';
+          gridItem.style.alignItems = '';
+          gridItem.style.justifyContent = '';
+          gridItem.style.color = '';
+          gridItem.style.fontFamily = '';
+          gridItem.style.padding = '';
+        }
         gridItem.style.backgroundImage = `url(${item.url})`;
         gridItem.style.backgroundSize = 'cover';
         gridItem.style.backgroundPosition = 'center';
@@ -559,6 +575,7 @@ function handleDrop(e) {
       }
 
       targetContainer.classList.remove('hidden');
+      targetContainer.classList.add('has-content');
       targetContainer.style.display = 'block';
 
       updateOverlappingIcons();
@@ -584,7 +601,7 @@ function handleDrop(e) {
 
         if (gridItem) {
           gridItem.style.backgroundImage = `url(${item.url})`;
-          gridItem.style.backgroundSize = 'contain';
+          gridItem.style.backgroundSize = 'cover';
           gridItem.style.backgroundPosition = 'center';
           gridItem.style.backgroundRepeat = 'no-repeat';
           gridItem.draggable = true;
@@ -596,6 +613,8 @@ function handleDrop(e) {
         if (iconLabel) {
           iconLabel.textContent = getIconLabel(item.name);
         }
+
+        container.classList.add('has-content');
 
         addGridItemDragListeners();
       }
@@ -1080,13 +1099,12 @@ function captureWorkspace(element) {
 }
 
 function getIconLabel(filename) {
-  // 提取文件名（不含扩展名）
+  if (!filename) {
+    return '';
+  }
   const nameWithoutExt = filename.split('.')[0];
-  // 分割成单词
   const words = nameWithoutExt.split(/[_\-]/);
-  // 获取最后一个单词
   const lastWord = words[words.length - 1];
-  // 首字母大写
   return lastWord.charAt(0).toUpperCase() + lastWord.slice(1);
 }
 
@@ -1122,16 +1140,108 @@ function collectIconFiles(nodes) {
   return iconFiles;
 }
 
+function resetWeatherWidget() {
+  const weatherContainer = document.querySelector(
+    '.grid-item-container.custom-container-4[style*="top: 18.7%"]'
+  );
+  if (!weatherContainer) return;
+
+  const gridItem = weatherContainer.querySelector('.grid-item');
+  if (!gridItem) return;
+
+  // 清除原有内容（如果有）
+  gridItem.innerHTML = '';
+
+  // 重新添加 weather-widget 类并设置样式
+  gridItem.classList.add('weather-widget');
+  gridItem.style.backgroundImage = '';
+  gridItem.style.background = 'transparent';
+  gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+  gridItem.style.flexDirection = 'row';
+  gridItem.style.alignItems = 'center';
+  gridItem.style.justifyContent = 'space-between';
+  gridItem.style.color = 'white';
+  gridItem.style.fontFamily =
+    '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  gridItem.style.padding = '0 10px';
+  gridItem.dataset.url = '';
+  gridItem.dataset.name = '';
+  gridItem.draggable = true;
+
+  // 获取当前时间与日期
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  const monthNames = [
+    'Jan','Feb','Mar','Apr','May','Jun',
+    'Jul','Aug','Sep','Oct','Nov','Dec'
+  ];
+  const weekdayNames = [
+    'Sunday','Monday','Tuesday','Wednesday',
+    'Thursday','Friday','Saturday'
+  ];
+  const dateStr = `${monthNames[now.getMonth()]} ${now.getDate()}`;
+  const weekdayStr = weekdayNames[now.getDay()];
+
+  // 重建天气小部件 HTML
+  gridItem.innerHTML = `
+    <div class="weather-time" id="weather-time">${timeStr}</div>
+    <div class="weather-right">
+      <div class="weather-info">
+        <span class="weather-condition">Sunny</span>
+        <span class="weather-temp">25°C</span>
+        <img class="weather-icon" src="resources/sun.png" alt="Sun" />
+      </div>
+      <div class="weather-date-row">
+        <span class="weather-date" id="weather-date">${dateStr}</span>
+        <span class="weather-weekday" id="weather-weekday">${weekdayStr}</span>
+      </div>
+    </div>
+  `;
+
+  // 更新标签文字
+  const iconLabel = weatherContainer.querySelector('.icon-label');
+  if (iconLabel) iconLabel.textContent = 'Clock';
+
+  // 确保容器可见
+  weatherContainer.classList.remove('hidden');
+  weatherContainer.classList.add('has-content');
+  weatherContainer.style.display = 'block';
+}
+
 function fillCustomContainers(previewFiles) {
-  const customContainers = document.querySelectorAll('.grid-item-container.custom-container-4:not(.initially-hidden)');
+  // 所有 custom-container-4（不包括 initially-hidden）
+  const customContainers = document.querySelectorAll(
+    '.grid-item-container.custom-container-4:not(.initially-hidden)'
+  );
+  // 天气小部件容器
+  const weatherContainer = document.querySelector(
+    '.grid-item-container.custom-container-4[style*="top: 18.7%"]'
+  );
 
-  customContainers.forEach((container, index) => {
-    if (index < previewFiles.length) {
-      const file = previewFiles[index];
-      const gridItem = container.querySelector('.grid-item');
-      const iconLabel = container.querySelector('.icon-label');
+  // 重置普通容器的隐藏状态
+  document.querySelectorAll('.grid-item-container:not(.custom-container-4)').forEach(container => {
+    container.style.display = '';
+    container.classList.remove('overlapped');
+  });
 
+  let fileIndex = 0;
+
+  customContainers.forEach(container => {
+    // ⚠️ 跳过天气容器，后面单独重建
+    if (container === weatherContainer) return;
+
+    const gridItem = container.querySelector('.grid-item');
+    const iconLabel = container.querySelector('.icon-label');
+
+    if (fileIndex < previewFiles.length) {
+      // 有可用的预览文件
+      const file = previewFiles[fileIndex];
       if (gridItem) {
+        gridItem.innerHTML = '';
+        gridItem.classList.remove('weather-widget');
         gridItem.style.backgroundImage = `url(${file.url})`;
         gridItem.style.backgroundSize = 'cover';
         gridItem.style.backgroundPosition = 'center';
@@ -1140,43 +1250,69 @@ function fillCustomContainers(previewFiles) {
         gridItem.dataset.name = file.name;
         gridItem.draggable = true;
         gridItem.dataset.isPreview = 'true';
+        gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+        addDeleteIcon(gridItem);
       }
-
-      if (iconLabel) {
-        iconLabel.textContent = getIconLabel(file.name);
-      }
-
+      if (iconLabel) iconLabel.textContent = getIconLabel(file.name);
       container.classList.remove('hidden');
+      container.classList.add('has-content');
+      container.style.display = 'block';
+      fileIndex++;
     } else {
-      const styleTop = container.style.top;
-      if (styleTop !== '17.1%') {
-        container.classList.add('hidden');
+      // 没有更多预览文件 — 清空该容器
+      if (gridItem) {
+        gridItem.innerHTML = '';
+        gridItem.classList.remove('weather-widget');
+        gridItem.style.backgroundImage = 'none';
+        gridItem.style.background = '';
+        gridItem.dataset.url = '';
+        gridItem.dataset.name = '';
+        gridItem.draggable = false;
+        delete gridItem.dataset.isPreview;
+        gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+        const delIcon = gridItem.querySelector('.delete-icon');
+        if (delIcon) delIcon.remove();
       }
+      if (iconLabel) iconLabel.textContent = '';
+      container.classList.remove('hidden');
+      container.classList.remove('has-content');
+      container.style.display = 'block';
     }
   });
+
+  // ✅ 重新创建天气小部件（保证时间和日期是最新的）
+  resetWeatherWidget();
 
   updateOverlappingIcons();
   addCustomContainerDragListeners();
 }
 
 function updateOverlappingIcons() {
-  const visibleCustomContainers = document.querySelectorAll('.grid-item-container.custom-container-4:not(.hidden)');
   const normalContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4)');
 
   normalContainers.forEach(container => {
     container.classList.remove('overlapped');
   });
 
-  visibleCustomContainers.forEach(customContainer => {
-    const customRect = customContainer.getBoundingClientRect();
+  document.querySelectorAll('.grid-item-container.custom-container-4').forEach(customContainer => {
+    const gridItem = customContainer.querySelector('.grid-item.custom-size-4');
+    const hasContent = gridItem && (
+      (gridItem.style.backgroundImage && gridItem.style.backgroundImage !== 'none') ||
+      gridItem.classList.contains('weather-widget')
+    );
+
+    if (!hasContent) {
+      return;
+    }
+
+    const customContainerTop = customContainer.style.top;
+    const overlappedRows = OVERLAP_MAP[customContainerTop] || [];
 
     normalContainers.forEach(normalContainer => {
-      const normalRect = normalContainer.getBoundingClientRect();
       const styleTop = normalContainer.style.top;
       const isDockItem = styleTop && styleTop.includes('96');
-      const isFixedItem = styleTop === '64.9%' || styleTop === '79.2%';
 
-      if (!isDockItem && !isFixedItem && isOverlapping(customRect, normalRect)) {
+      if (!isDockItem && overlappedRows.includes(styleTop)) {
         normalContainer.classList.add('overlapped');
       }
     });
@@ -1192,13 +1328,34 @@ function isOverlapping(rect1, rect2) {
   );
 }
 
-const ALLOWED_POSITIONS = [
-  { top: '3%', left: '8%' },
-  { top: '17.1%', left: '8%' },
-  { top: '31.1%', left: '8%' },
-  { top: '45.4%', left: '8%' },
-  { top: '59.6%', left: '8%' },
-];
+const OVERLAP_MAP = {
+  '4.6%': ['8.4%', '22.5%'],
+  '18.7%': ['22.5%', '36.5%'],
+  '32.8%': ['36.5%', '50.8%'],
+  '47.1%': ['50.8%', '64.9%'],
+  '61.4%': ['64.9%', '79.2%'],
+};
+
+function hideOverlappingRows(topPosition) {
+  const rowsToHide = OVERLAP_MAP[topPosition] || [];
+  document.querySelectorAll('.grid-item-container:not(.custom-container-4)').forEach(container => {
+    const styleTop = container.style.top;
+    if (rowsToHide.includes(styleTop)) {
+      container.style.display = 'none';
+    }
+  });
+}
+
+function showOverlappingRows(topPosition) {
+  const rowsToShow = OVERLAP_MAP[topPosition] || [];
+  document.querySelectorAll('.grid-item-container:not(.custom-container-4)').forEach(container => {
+    const styleTop = container.style.top;
+    if (rowsToShow.includes(styleTop)) {
+      container.style.display = '';
+      container.classList.remove('overlapped');
+    }
+  });
+}
 
 function addCustomContainerDragListeners() {
   document.querySelectorAll('.grid-item.custom-size-4').forEach(gridItem => {
@@ -1221,12 +1378,24 @@ function handleCustomContainerDragEnd(e) {
 
   containers.forEach(customContainer => {
     const item = customContainer.querySelector('.grid-item');
-    if (!item || !item.style.backgroundImage || item.style.backgroundImage === 'none') {
+    if (!item) {
       customContainer.classList.add('hidden');
       customContainer.style.display = 'none';
     } else {
-      customContainer.classList.remove('hidden');
-      customContainer.style.display = 'block';
+      const hasBackground = item.style.backgroundImage && item.style.backgroundImage !== 'none';
+      const hasWeatherWidget = item.classList.contains('weather-widget');
+      const hasContent = hasBackground || hasWeatherWidget;
+
+      if (hasContent) {
+        customContainer.classList.remove('hidden');
+        customContainer.classList.add('has-content');
+        customContainer.style.display = 'block';
+      } else {
+        customContainer.classList.remove('hidden');
+        customContainer.classList.remove('has-content');
+        customContainer.style.display = 'block';
+        item.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+      }
     }
   });
 }
@@ -1234,11 +1403,14 @@ function handleCustomContainerDragEnd(e) {
 function handleCustomContainerDragStart(e) {
   const gridItem = e.currentTarget;
   const container = gridItem.parentElement;
+  const isWeatherWidget = gridItem.classList.contains('weather-widget');
 
   e.dataTransfer.setData('text/plain', JSON.stringify({
     containerIndex: Array.from(document.querySelectorAll('.grid-item-container.custom-container-4')).indexOf(container),
     url: gridItem.dataset.url,
-    name: gridItem.dataset.name
+    name: gridItem.dataset.name,
+    isWeatherWidget: isWeatherWidget,
+    isFromCustomContainer: true
   }));
 
   gridItem.style.opacity = '0.5';
@@ -1260,17 +1432,33 @@ function handleCustomContainerDrop(e) {
     const sourceIndex = sourceData.containerIndex;
     const sourceUrl = sourceData.url;
     const sourceName = sourceData.name;
+    const isSourceWeatherWidget = sourceData.isWeatherWidget;
 
     const containers = Array.from(document.querySelectorAll('.grid-item-container.custom-container-4'));
     const targetContainer = e.currentTarget;
     const targetIndex = containers.indexOf(targetContainer);
 
     if (sourceIndex === targetIndex) {
-      containers[sourceIndex].querySelector('.grid-item').style.opacity = '1';
+      const container = containers[sourceIndex];
+      if (container) {
+        const gridItem = container.querySelector('.grid-item');
+        if (gridItem) {
+          gridItem.style.opacity = '1';
+        }
+      }
       return;
     }
 
     const sourceContainer = containers[sourceIndex];
+    if (!sourceContainer) {
+      containers.forEach(container => {
+        const gridItem = container.querySelector('.grid-item');
+        if (gridItem) {
+          gridItem.style.opacity = '1';
+        }
+      });
+      return;
+    }
     const sourceGridItem = sourceContainer.querySelector('.grid-item');
     const sourceIconLabel = sourceContainer.querySelector('.icon-label');
 
@@ -1279,52 +1467,107 @@ function handleCustomContainerDrop(e) {
 
     const targetUrl = targetGridItem.dataset.url;
     const targetName = targetGridItem.dataset.name;
+    const isTargetWeatherWidget = targetGridItem.classList.contains('weather-widget');
 
-    if (targetUrl) {
-      sourceGridItem.style.backgroundImage = `url(${targetUrl})`;
-      sourceGridItem.style.backgroundSize = 'cover';
-      sourceGridItem.style.backgroundPosition = 'center';
-      sourceGridItem.style.backgroundRepeat = 'no-repeat';
-      sourceGridItem.dataset.url = targetUrl;
-      sourceGridItem.dataset.name = targetName;
-      sourceGridItem.draggable = true;
-      sourceGridItem.dataset.isPreview = 'true';
-
-      if (sourceIconLabel) {
-        sourceIconLabel.textContent = getIconLabel(targetName);
-      }
-
-      sourceContainer.classList.remove('hidden');
-      sourceContainer.style.display = 'block';
+    if (isSourceWeatherWidget) {
+      sourceGridItem.innerHTML = '';
+      sourceGridItem.classList.remove('weather-widget');
+      sourceGridItem.style.background = '';
+      sourceGridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+      sourceGridItem.style.flexDirection = '';
+      sourceGridItem.style.alignItems = '';
+      sourceGridItem.style.justifyContent = '';
+      sourceGridItem.style.color = '';
+      sourceGridItem.style.fontFamily = '';
+      sourceGridItem.style.padding = '';
+      sourceGridItem.style.backgroundImage = '';
+      sourceGridItem.dataset.url = '';
+      sourceGridItem.dataset.name = '';
     } else {
       sourceGridItem.style.backgroundImage = '';
       sourceGridItem.dataset.url = '';
       sourceGridItem.dataset.name = '';
       sourceGridItem.draggable = false;
       sourceGridItem.dataset.isPreview = '';
-
-      if (sourceIconLabel) {
-        sourceIconLabel.textContent = '';
-      }
-
-      sourceContainer.classList.add('hidden');
-      sourceContainer.style.display = 'none';
     }
 
-    targetGridItem.style.backgroundImage = `url(${sourceUrl})`;
-    targetGridItem.style.backgroundSize = 'cover';
-    targetGridItem.style.backgroundPosition = 'center';
-    targetGridItem.style.backgroundRepeat = 'no-repeat';
-    targetGridItem.dataset.url = sourceUrl;
-    targetGridItem.dataset.name = sourceName;
-    targetGridItem.draggable = true;
-    targetGridItem.dataset.isPreview = 'true';
+    if (sourceIconLabel) {
+      sourceIconLabel.textContent = '';
+    }
+
+    sourceContainer.classList.add('hidden');
+    sourceContainer.classList.remove('has-content');
+    sourceContainer.style.display = 'none';
+
+    if (isTargetWeatherWidget) {
+      targetGridItem.innerHTML = '';
+      targetGridItem.classList.remove('weather-widget');
+      targetGridItem.style.background = '';
+      targetGridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+      targetGridItem.style.flexDirection = '';
+      targetGridItem.style.alignItems = '';
+      targetGridItem.style.justifyContent = '';
+      targetGridItem.style.color = '';
+      targetGridItem.style.fontFamily = '';
+      targetGridItem.style.padding = '';
+    }
+
+    if (isSourceWeatherWidget) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      const weekdayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const dateStr = `${monthNames[now.getMonth()]} ${now.getDate()}`;
+      const weekdayStr = weekdayNames[now.getDay()];
+
+      targetGridItem.innerHTML = `
+        <div class="weather-time" id="weather-time">${timeStr}</div>
+        <div class="weather-right">
+          <div class="weather-info">
+            <span class="weather-condition">Sunny</span>
+            <span class="weather-temp">25°C</span>
+            <img class="weather-icon" src="resources/sun.png" alt="Sun" />
+          </div>
+          <div class="weather-date-row">
+            <span class="weather-date" id="weather-date">${dateStr}</span>
+            <span class="weather-weekday" id="weather-weekday">${weekdayStr}</span>
+          </div>
+        </div>
+      `;
+      targetGridItem.classList.add('weather-widget');
+      targetGridItem.style.background = 'transparent';
+      targetGridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+      targetGridItem.style.flexDirection = 'row';
+      targetGridItem.style.alignItems = 'center';
+      targetGridItem.style.justifyContent = 'space-between';
+      targetGridItem.style.color = 'white';
+      targetGridItem.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      targetGridItem.style.padding = '0 10px';
+      targetGridItem.style.backgroundImage = '';
+      targetGridItem.dataset.url = '';
+      targetGridItem.dataset.name = '';
+      targetGridItem.draggable = true;
+    } else {
+      targetGridItem.style.backgroundImage = `url(${sourceUrl})`;
+      targetGridItem.style.backgroundSize = 'cover';
+      targetGridItem.style.backgroundPosition = 'center';
+      targetGridItem.style.backgroundRepeat = 'no-repeat';
+      targetGridItem.dataset.url = sourceUrl;
+      targetGridItem.dataset.name = sourceName;
+      targetGridItem.draggable = true;
+      targetGridItem.dataset.isPreview = 'true';
+      targetGridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+    }
 
     if (targetIconLabel) {
-      targetIconLabel.textContent = getIconLabel(sourceName);
+      targetIconLabel.textContent = isSourceWeatherWidget ? 'Clock' : getIconLabel(sourceName);
     }
 
     targetContainer.classList.remove('hidden');
+    targetContainer.classList.add('has-content');
     targetContainer.style.display = 'block';
 
     containers.forEach(container => {
@@ -1334,7 +1577,14 @@ function handleCustomContainerDrop(e) {
       }
     });
 
+    const sourceTop = sourceContainer.style.top;
+    const targetTop = targetContainer.style.top;
+
+    showOverlappingRows(sourceTop);
+    hideOverlappingRows(targetTop);
+
     updateOverlappingIcons();
+    addCustomContainerDragListeners();
 
   } catch (err) {
     console.error('Failed to handle custom container drop:', err);
@@ -1342,17 +1592,25 @@ function handleCustomContainerDrop(e) {
 }
 
 function fillIconGrids(imageFiles) {
-  const gridContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.initially-hidden):not([style*="grid-column"]):not([style*="display: none"])');
+  const gridContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.initially-hidden):not(.overlapped):not([style*="grid-column"]):not([style*="display: none"])');
 
   let fileIndex = 0;
 
-  // 为所有网格容器添加索引
+  const skipPositions = ['8.4%', '22.5%', '36.5%', '50.8%'];
+
   gridContainers.forEach((container, index) => {
     container.dataset.index = index.toString();
   });
 
   // 填充网格
   gridContainers.forEach(container => {
+    const styleTop = container.style.top;
+    const isDockItem = styleTop && styleTop.includes('96');
+
+    if (skipPositions.includes(styleTop) && !isDockItem) {
+      return;
+    }
+
     if (fileIndex < imageFiles.length) {
       const file = imageFiles[fileIndex];
       const gridItem = container.querySelector('.grid-item');
@@ -1360,7 +1618,7 @@ function fillIconGrids(imageFiles) {
 
       if (gridItem) {
         gridItem.style.backgroundImage = `url(${file.url})`;
-        gridItem.style.backgroundSize = 'contain';
+        gridItem.style.backgroundSize = 'cover';
         gridItem.style.backgroundPosition = 'center';
         gridItem.style.backgroundRepeat = 'no-repeat';
         // 添加拖拽功能
@@ -1376,6 +1634,7 @@ function fillIconGrids(imageFiles) {
         iconLabel.textContent = getIconLabel(file.name);
       }
 
+      container.classList.add('has-content');
       fileIndex++;
     }
   });
@@ -1412,6 +1671,13 @@ function addDeleteIcon(gridItem) {
 
     // 移除删除图标
     deleteIcon.remove();
+
+    // 移除 has-content 类
+    const container = gridItem.parentElement;
+    container.classList.remove('has-content');
+
+    // 更新重叠图标状态
+    updateOverlappingIcons();
   });
 
   gridItem.appendChild(deleteIcon);
@@ -1434,14 +1700,15 @@ function addGridItemDragListeners() {
 
 function handleGridItemDragStart(e) {
   const item = e.currentTarget;
-  // 存储拖拽元素的引用
+  const parentContainer = item.parentElement;
+  const isFromCustomContainer = parentContainer.classList.contains('custom-container-4');
+
   e.dataTransfer.setData('text/plain', JSON.stringify({
     url: item.dataset.url,
-    name: item.dataset.name
+    name: item.dataset.name,
+    isFromCustomContainer: isFromCustomContainer
   }));
-  // 存储拖拽元素的容器
-  e.dataTransfer.setData('text/html', item.parentElement.dataset.index);
-  // 添加拖拽时的视觉反馈
+  e.dataTransfer.setData('text/html', parentContainer.dataset.index || '');
   item.style.opacity = '0.5';
 }
 
@@ -1471,10 +1738,7 @@ function handleGridItemDrop(e) {
       return;
     }
 
-    // 不允许将预览图标（custom-size-4）拖拽到普通容器
-    const sourceGridItem = document.querySelector(`.grid-item[data-url="${item.url}"]`);
-    if (sourceGridItem && sourceGridItem.classList.contains('custom-size-4') && !targetContainer.classList.contains('custom-container-4')) {
-      // 恢复拖拽元素的透明度
+    if (item.isFromCustomContainer && !targetContainer.classList.contains('custom-container-4')) {
       document.querySelectorAll('.grid-item').forEach(gridItem => {
         gridItem.style.opacity = '1';
       });
@@ -1497,7 +1761,7 @@ function handleGridItemDrop(e) {
 
     // 将拖拽的图标内容移动到目标位置
     targetGridItem.style.backgroundImage = `url(${item.url})`;
-    targetGridItem.style.backgroundSize = 'contain';
+    targetGridItem.style.backgroundSize = 'cover';
     targetGridItem.style.backgroundPosition = 'center';
     targetGridItem.style.backgroundRepeat = 'no-repeat';
     targetGridItem.dataset.url = item.url;
@@ -1510,6 +1774,7 @@ function handleGridItemDrop(e) {
 
     // 为目标位置添加删除图标
     addDeleteIcon(targetGridItem);
+    targetContainer.classList.add('has-content');
 
     // 找到源容器并更新其内容
     if (sourceIndex) {
@@ -1526,6 +1791,7 @@ function handleGridItemDrop(e) {
             sourceGridItem.draggable = true;
             // 为源位置添加删除图标
             addDeleteIcon(sourceGridItem);
+            sourceContainer.classList.add('has-content');
           } else {
             sourceGridItem.style.backgroundImage = '';
             sourceGridItem.dataset.url = '';
@@ -1536,6 +1802,7 @@ function handleGridItemDrop(e) {
             if (sourceDeleteIcon) {
               sourceDeleteIcon.remove();
             }
+            sourceContainer.classList.remove('has-content');
           }
         }
 
@@ -1668,6 +1935,16 @@ function init() {
   updateSettingsUI();
   // renderGridOverlay();
 
+  hideOverlappingRows('18.7%');
+
+  document.querySelectorAll('.grid-item-container.custom-container-4').forEach(container => {
+    const gridItem = container.querySelector('.grid-item');
+    if (gridItem && !gridItem.classList.contains('weather-widget') && (!gridItem.style.backgroundImage || gridItem.style.backgroundImage === 'none')) {
+      container.classList.remove('hidden');
+      gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+    }
+  });
+
   // 初始禁用导出按钮
   const exportBtn = document.getElementById('export-btn');
   if (exportBtn) {
@@ -1763,14 +2040,56 @@ function init() {
 
   // 更新时间
   function updateTime() {
-    document.getElementById('current-time').textContent = new Date().toLocaleTimeString('zh-CN', {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('zh-CN', {
       hour: '2-digit',
       minute: '2-digit'
     });
+    document.getElementById('current-time').textContent = timeStr;
+
+    const weatherTime = document.getElementById('weather-time');
+    if (weatherTime) {
+      weatherTime.textContent = timeStr;
+    }
+  }
+
+  // 在每分钟开始时更新时间
+  function scheduleTimeUpdate() {
+    const now = new Date();
+    const millisecondsUntilNextMinute = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+    setTimeout(() => {
+      updateTime();
+      scheduleTimeUpdate();
+    }, millisecondsUntilNextMinute || 60000);
+  }
+
+  // 更新日期
+  function updateDate() {
+    const now = new Date();
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const weekdayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    const month = monthNames[now.getMonth()];
+    const date = now.getDate();
+    const weekday = weekdayNames[now.getDay()];
+
+    const weatherDate = document.getElementById('weather-date');
+    const weatherWeekday = document.getElementById('weather-weekday');
+
+    if (weatherDate) {
+      weatherDate.textContent = `${month} ${date}`;
+    }
+    if (weatherWeekday) {
+      weatherWeekday.textContent = weekday;
+    }
   }
 
   updateTime();
-  setInterval(updateTime, 60000);
+  updateDate();
+  scheduleTimeUpdate();
+
+  updateOverlappingIcons();
+  addCustomContainerDragListeners();
 }
 
 // 页面加载完成后初始化
