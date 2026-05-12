@@ -309,11 +309,15 @@ function updateSettingsUI() {
 
   // 更新所有grid-item的大小和边框
   document.querySelectorAll('.grid-item').forEach(item => {
-    if (!item.classList.contains('custom-size-4')) {
+    if (!item.classList.contains('custom-size-4') && !item.classList.contains('custom-size-2')) {
       item.style.width = `${state.settings.iconSize}px`;
       item.style.height = `${state.settings.iconSize}px`;
+      item.style.border = state.settings.showGrid ? '1px dashed rgba(255, 255, 255, 0.2)' : '1px dashed transparent';
+    } else {
+      const container = item.parentElement;
+      const hasContent = container.classList.contains('has-content');
+      item.style.border = hasContent ? '1px dashed rgba(255, 255, 255, 0.2)' : 'none';
     }
-    item.style.border = state.settings.showGrid ? '1px dashed rgba(255, 255, 255, 0.2)' : '1px dashed transparent';
   });
 }
 
@@ -440,8 +444,8 @@ async function handleDroppedFiles(files) {
       setWallpaper(wallpaperUrl);
     }
 
-    const previewFiles = collectPreviewFiles(parsedFiles);
-    fillCustomContainers(previewFiles);
+    const previewFiles = await collectPreviewFilesWithDimensions(parsedFiles);
+    await fillCustomContainers(previewFiles);
 
     const iconFiles = collectIconFiles(parsedFiles);
     fillIconGrids(iconFiles);
@@ -532,6 +536,7 @@ function handleDragOver(e) {
 
 function handleDrop(e) {
   e.preventDefault();
+  e.stopPropagation();
   const data = e.dataTransfer.getData('text/plain');
   if (!data) return;
 
@@ -539,11 +544,27 @@ function handleDrop(e) {
     const item = JSON.parse(data);
     const targetContainer = e.currentTarget;
 
-    if (item.isFromCustomContainer && !targetContainer.classList.contains('custom-container-4')) {
-      return;
+    const isTargetContainer4 = targetContainer.classList.contains('custom-container-4');
+    const isTargetContainer2 = targetContainer.classList.contains('custom-container-2');
+
+    if (item.isFromCustomContainer) {
+      if (!isTargetContainer4 && !isTargetContainer2) {
+        return;
+      }
+      const itemIsFrom4 = item.containerType === 'custom-container-4';
+      if ((itemIsFrom4 && isTargetContainer2) || (!itemIsFrom4 && isTargetContainer4)) {
+        return;
+      }
+    } else {
+      if (isTargetContainer4 && !isTargetContainer2) {
+        return;
+      }
+      if (isTargetContainer2 && !isTargetContainer4) {
+        return;
+      }
     }
 
-    if (targetContainer.classList.contains('custom-container-4')) {
+    if (isTargetContainer4 || isTargetContainer2) {
       const gridItem = targetContainer.querySelector('.grid-item');
       const iconLabel = targetContainer.querySelector('.icon-label');
 
@@ -552,7 +573,7 @@ function handleDrop(e) {
           gridItem.innerHTML = '';
           gridItem.classList.remove('weather-widget');
           gridItem.style.background = '';
-          gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+          gridItem.style.border = 'none';
           gridItem.style.flexDirection = '';
           gridItem.style.alignItems = '';
           gridItem.style.justifyContent = '';
@@ -594,7 +615,7 @@ function handleDrop(e) {
       const clampedCol = Math.max(0, Math.min(col, GRID_CONFIG.cols - 1));
       const clampedRow = Math.max(0, Math.min(row, GRID_CONFIG.rows));
 
-      const gridContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4)');
+      const gridContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)');
       const targetIndex = clampedRow * GRID_CONFIG.cols + clampedCol;
 
       if (targetIndex < gridContainers.length) {
@@ -649,8 +670,8 @@ async function handleFileChange(e) {
       setWallpaper(wallpaperUrl);
     }
 
-    const previewFiles = collectPreviewFiles(parsedFiles);
-    fillCustomContainers(previewFiles);
+    const previewFiles = await collectPreviewFilesWithDimensions(parsedFiles);
+    await fillCustomContainers(previewFiles);
 
     const iconFiles = collectIconFiles(parsedFiles);
     fillIconGrids(iconFiles);
@@ -874,6 +895,19 @@ function parseFiles(fileList) {
 function isImageFile(filename) {
   const ext = filename.toLowerCase().split('.').pop();
   return ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext || '');
+}
+
+function getImageDimensions(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      resolve(null);
+    };
+    img.src = url;
+  });
 }
 
 function isWallpaper(filename) {
@@ -1155,6 +1189,24 @@ function collectPreviewFiles(nodes) {
   return previewFiles;
 }
 
+async function collectPreviewFilesWithDimensions(nodes) {
+  const previewFiles = await collectPreviewFiles(nodes);
+  const filesWithDimensions = [];
+
+  for (const file of previewFiles) {
+    const dimensions = await getImageDimensions(file.url);
+    if (dimensions) {
+      const ratio = dimensions.width / dimensions.height;
+      file.is2x1 = Math.abs(ratio - 2) < 0.1;
+      file.is1x1 = Math.abs(ratio - 1) < 0.1;
+      file.ratio = ratio;
+      filesWithDimensions.push(file);
+    }
+  }
+
+  return filesWithDimensions;
+}
+
 function collectIconFiles(nodes) {
   const iconFiles = [];
 
@@ -1171,8 +1223,8 @@ function collectIconFiles(nodes) {
   return iconFiles;
 }
 
-function resetWeatherWidget() {
-  const weatherContainer = document.querySelector(
+function resetWeatherWidget(container) {
+  const weatherContainer = container || document.querySelector(
     '.grid-item-container.custom-container-4[style*="top: 18.7%"]'
   );
   if (!weatherContainer) return;
@@ -1245,65 +1297,78 @@ function resetWeatherWidget() {
   if (gridItem) {
     gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
   }
+
+  addDeleteIcon(gridItem);
 }
 
-function fillCustomContainers(previewFiles) {
-  // 天气小部件容器 (top: 18.7%)
+async function fillCustomContainers(previewFiles) {
   const weatherContainer = document.querySelector(
     '.grid-item-container.custom-container-4[style*="top: 18.7%"]'
   );
 
-  // 其他 custom-container-4（不包括 initially-hidden 和天气容器）
-  const otherContainers = document.querySelectorAll(
+  const otherContainers4 = document.querySelectorAll(
     '.grid-item-container.custom-container-4:not(.initially-hidden):not([style*="top: 18.7%"])'
   );
 
-  // 重置普通容器的隐藏状态
-  document.querySelectorAll('.grid-item-container:not(.custom-container-4)').forEach(container => {
+  const containers2 = document.querySelectorAll(
+    '.grid-item-container.custom-container-2:not(.initially-hidden)'
+  );
+
+  document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)').forEach(container => {
     container.style.display = '';
     container.classList.remove('overlapped');
   });
 
-  let fileIndex = 0;
+  const ratio1Files = previewFiles.filter(f => f.is1x1);
+  const ratio2Files = previewFiles.filter(f => f.is2x1);
+  const otherFiles = previewFiles.filter(f => !f.is1x1 && !f.is2x1);
 
-  // 首先检查天气容器位置是否应该填充预览图片
-  if (weatherContainer && fileIndex < previewFiles.length) {
+  let ratio1Index = 0;
+  let ratio2Index = 0;
+  let otherIndex = 0;
+
+  if (weatherContainer) {
     const gridItem = weatherContainer.querySelector('.grid-item');
-    const iconLabel = weatherContainer.querySelector('.icon-label');
-    const file = previewFiles[fileIndex];
+    const hasWeatherWidget = gridItem && gridItem.classList.contains('weather-widget');
 
-    if (gridItem) {
-      gridItem.innerHTML = '';
-      gridItem.classList.remove('weather-widget');
-      gridItem.style.backgroundImage = `url(${file.url})`;
-      gridItem.style.backgroundSize = 'cover';
-      gridItem.style.backgroundPosition = 'center';
-      gridItem.style.backgroundRepeat = 'no-repeat';
-      gridItem.dataset.url = file.url;
-      gridItem.dataset.name = file.name;
-      gridItem.draggable = true;
-      gridItem.dataset.isPreview = 'true';
-      gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
-      addDeleteIcon(gridItem);
+    let weatherFile = null;
+    if (ratio2Index < ratio2Files.length) {
+      weatherFile = ratio2Files[ratio2Index++];
+    } else if (otherIndex < otherFiles.length) {
+      weatherFile = otherFiles[otherIndex++];
     }
-    if (iconLabel) iconLabel.textContent = getIconLabel(file.name);
-    weatherContainer.classList.remove('hidden');
-    weatherContainer.classList.add('has-content');
-    weatherContainer.style.display = 'block';
-    fileIndex++;
-  } else if (weatherContainer) {
-    // 没有预览文件，重置为天气小部件
-    resetWeatherWidget();
+
+    if (weatherFile) {
+      const iconLabel = weatherContainer.querySelector('.icon-label');
+      if (gridItem) {
+        gridItem.innerHTML = '';
+        gridItem.classList.remove('weather-widget');
+        gridItem.style.backgroundImage = `url(${weatherFile.url})`;
+        gridItem.style.backgroundSize = 'cover';
+        gridItem.style.backgroundPosition = 'center';
+        gridItem.style.backgroundRepeat = 'no-repeat';
+        gridItem.dataset.url = weatherFile.url;
+        gridItem.dataset.name = weatherFile.name;
+        gridItem.draggable = true;
+        gridItem.dataset.isPreview = 'true';
+        gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+        addDeleteIcon(gridItem);
+      }
+      if (iconLabel) iconLabel.textContent = getIconLabel(weatherFile.name);
+      weatherContainer.classList.remove('hidden');
+      weatherContainer.classList.add('has-content');
+      weatherContainer.style.display = 'block';
+    } else if (hasWeatherWidget) {
+      resetWeatherWidget();
+    }
   }
 
-  // 填充其他容器
-  otherContainers.forEach(container => {
+  containers2.forEach(container => {
     const gridItem = container.querySelector('.grid-item');
     const iconLabel = container.querySelector('.icon-label');
 
-    if (fileIndex < previewFiles.length) {
-      // 有可用的预览文件
-      const file = previewFiles[fileIndex];
+    if (ratio1Index < ratio1Files.length) {
+      const file = ratio1Files[ratio1Index++];
       if (gridItem) {
         gridItem.innerHTML = '';
         gridItem.classList.remove('weather-widget');
@@ -1322,7 +1387,57 @@ function fillCustomContainers(previewFiles) {
       container.classList.remove('hidden');
       container.classList.add('has-content');
       container.style.display = 'block';
-      fileIndex++;
+    } else {
+      if (gridItem) {
+        gridItem.innerHTML = '';
+        gridItem.classList.remove('weather-widget');
+        gridItem.style.backgroundImage = 'none';
+        gridItem.style.background = '';
+        gridItem.dataset.url = '';
+        gridItem.dataset.name = '';
+        gridItem.draggable = false;
+        delete gridItem.dataset.isPreview;
+        gridItem.style.border = 'none';
+        const delIcon = gridItem.querySelector('.delete-icon');
+        if (delIcon) delIcon.remove();
+      }
+      if (iconLabel) iconLabel.textContent = 'Messages';
+      container.classList.remove('hidden');
+      container.classList.remove('has-content');
+      container.style.display = 'block';
+    }
+  });
+
+  otherContainers4.forEach(container => {
+    const gridItem = container.querySelector('.grid-item');
+    const iconLabel = container.querySelector('.icon-label');
+
+    let file = null;
+    if (ratio2Index < ratio2Files.length) {
+      file = ratio2Files[ratio2Index++];
+    } else if (otherIndex < otherFiles.length) {
+      file = otherFiles[otherIndex++];
+    }
+
+    if (file) {
+      if (gridItem) {
+        gridItem.innerHTML = '';
+        gridItem.classList.remove('weather-widget');
+        gridItem.style.backgroundImage = `url(${file.url})`;
+        gridItem.style.backgroundSize = 'cover';
+        gridItem.style.backgroundPosition = 'center';
+        gridItem.style.backgroundRepeat = 'no-repeat';
+        gridItem.dataset.url = file.url;
+        gridItem.dataset.name = file.name;
+        gridItem.draggable = true;
+        gridItem.dataset.isPreview = 'true';
+        gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+        addDeleteIcon(gridItem);
+      }
+      if (iconLabel) iconLabel.textContent = getIconLabel(file.name);
+      container.classList.remove('hidden');
+      container.classList.add('has-content');
+      container.style.display = 'block';
     } else {
       // 没有更多预览文件 — 清空该容器
       if (gridItem) {
@@ -1350,14 +1465,15 @@ function fillCustomContainers(previewFiles) {
 }
 
 function updateOverlappingIcons() {
-  const normalContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4)');
+  const normalContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)');
 
   normalContainers.forEach(container => {
     container.classList.remove('overlapped');
   });
 
-  document.querySelectorAll('.grid-item-container.custom-container-4').forEach(customContainer => {
-    const gridItem = customContainer.querySelector('.grid-item.custom-size-4');
+  document.querySelectorAll('.grid-item-container.custom-container-4, .grid-item-container.custom-container-2').forEach(customContainer => {
+    const isContainer4 = customContainer.classList.contains('custom-container-4');
+    const gridItem = customContainer.querySelector(isContainer4 ? '.grid-item.custom-size-4' : '.grid-item.custom-size-2');
     const hasContent = gridItem && (
       (gridItem.style.backgroundImage && gridItem.style.backgroundImage !== 'none') ||
       gridItem.classList.contains('weather-widget')
@@ -1368,16 +1484,33 @@ function updateOverlappingIcons() {
     }
 
     const customContainerTop = customContainer.style.top;
-    const overlappedRows = OVERLAP_MAP[customContainerTop] || [];
+    const customContainerLeft = customContainer.style.left;
 
-    normalContainers.forEach(normalContainer => {
-      const styleTop = normalContainer.style.top;
-      const isDockItem = styleTop && styleTop.includes('96');
+    if (isContainer4) {
+      const overlappedRows = OVERLAP_MAP_4[customContainerTop] || [];
+      normalContainers.forEach(normalContainer => {
+        const styleTop = normalContainer.style.top;
+        const isDockItem = styleTop && styleTop.includes('96');
 
-      if (!isDockItem && overlappedRows.includes(styleTop)) {
-        normalContainer.classList.add('overlapped');
-      }
-    });
+        if (!isDockItem && overlappedRows.includes(styleTop)) {
+          normalContainer.classList.add('overlapped');
+        }
+      });
+    } else {
+      const overlappedPositions = (OVERLAP_MAP_2[customContainerTop] && OVERLAP_MAP_2[customContainerTop][customContainerLeft]) || [];
+      normalContainers.forEach(normalContainer => {
+        const styleTop = normalContainer.style.top;
+        const styleLeft = normalContainer.style.left;
+        const isDockItem = styleTop && styleTop.includes('96');
+
+        if (!isDockItem) {
+          const matches = overlappedPositions.some(pos => pos.top === styleTop && pos.left === styleLeft);
+          if (matches) {
+            normalContainer.classList.add('overlapped');
+          }
+        }
+      });
+    }
   });
 }
 
@@ -1390,7 +1523,7 @@ function isOverlapping(rect1, rect2) {
   );
 }
 
-const OVERLAP_MAP = {
+const OVERLAP_MAP_4 = {
   '4.6%': ['8.4%', '22.5%'],
   '18.7%': ['22.5%', '36.5%'],
   '32.8%': ['36.5%', '50.8%'],
@@ -1398,29 +1531,157 @@ const OVERLAP_MAP = {
   '61.4%': ['64.9%', '79.2%'],
 };
 
-function hideOverlappingRows(topPosition) {
-  const rowsToHide = OVERLAP_MAP[topPosition] || [];
-  document.querySelectorAll('.grid-item-container:not(.custom-container-4)').forEach(container => {
-    const styleTop = container.style.top;
-    if (rowsToHide.includes(styleTop)) {
-      container.style.display = 'none';
-    }
-  });
+const OVERLAP_MAP_2 = {
+  '4.6%': {
+    '8%': [
+      { top: '8.4%', left: '16.2%' },
+      { top: '8.4%', left: '38.8%' },
+      { top: '22.5%', left: '16.2%' },
+      { top: '22.5%', left: '38.8%' },
+    ],
+    '30.4%': [
+      { top: '8.4%', left: '38.8%' },
+      { top: '8.4%', left: '61.4%' },
+      { top: '22.5%', left: '38.8%' },
+      { top: '22.5%', left: '61.4%' },
+    ],
+    '52.8%': [
+      { top: '8.4%', left: '61.4%' },
+      { top: '8.4%', left: '83.9%' },
+      { top: '22.5%', left: '61.4%' },
+      { top: '22.5%', left: '83.9%' },
+    ],
+  },
+  '18.7%': {
+    '8%': [
+      { top: '22.5%', left: '16.2%' },
+      { top: '22.5%', left: '38.8%' },
+      { top: '36.5%', left: '16.2%' },
+      { top: '36.5%', left: '38.8%' },
+    ],
+    '30.4%': [
+      { top: '22.5%', left: '38.8%' },
+      { top: '22.5%', left: '61.4%' },
+      { top: '36.5%', left: '38.8%' },
+      { top: '36.5%', left: '61.4%' },
+    ],
+    '52.8%': [
+      { top: '22.5%', left: '61.4%' },
+      { top: '22.5%', left: '83.9%' },
+      { top: '36.5%', left: '61.4%' },
+      { top: '36.5%', left: '83.9%' },
+    ],
+  },
+  '32.8%': {
+    '8%': [
+      { top: '36.5%', left: '16.2%' },
+      { top: '36.5%', left: '38.8%' },
+      { top: '50.8%', left: '16.2%' },
+      { top: '50.8%', left: '38.8%' },
+    ],
+    '30.4%': [
+      { top: '36.5%', left: '38.8%' },
+      { top: '36.5%', left: '61.4%' },
+      { top: '50.8%', left: '38.8%' },
+      { top: '50.8%', left: '61.4%' },
+    ],
+    '52.8%': [
+      { top: '36.5%', left: '61.4%' },
+      { top: '36.5%', left: '83.9%' },
+      { top: '50.8%', left: '61.4%' },
+      { top: '50.8%', left: '83.9%' },
+    ],
+  },
+  '47.1%': {
+    '8%': [
+      { top: '50.8%', left: '16.2%' },
+      { top: '50.8%', left: '38.8%' },
+      { top: '64.9%', left: '16.2%' },
+      { top: '64.9%', left: '38.8%' },
+    ],
+    '30.4%': [
+      { top: '50.8%', left: '38.8%' },
+      { top: '50.8%', left: '61.4%' },
+      { top: '64.9%', left: '38.8%' },
+      { top: '64.9%', left: '61.4%' },
+    ],
+    '52.8%': [
+      { top: '50.8%', left: '61.4%' },
+      { top: '50.8%', left: '83.9%' },
+      { top: '64.9%', left: '61.4%' },
+      { top: '64.9%', left: '83.9%' },
+    ],
+  },
+  '61.4%': {
+    '8%': [
+      { top: '64.9%', left: '16.2%' },
+      { top: '64.9%', left: '38.8%' },
+      { top: '79.2%', left: '16.2%' },
+      { top: '79.2%', left: '38.8%' },
+    ],
+    '30.4%': [
+      { top: '64.9%', left: '38.8%' },
+      { top: '64.9%', left: '61.4%' },
+      { top: '79.2%', left: '38.8%' },
+      { top: '79.2%', left: '61.4%' },
+    ],
+    '52.8%': [
+      { top: '64.9%', left: '61.4%' },
+      { top: '64.9%', left: '83.9%' },
+      { top: '79.2%', left: '61.4%' },
+      { top: '79.2%', left: '83.9%' },
+    ],
+  },
+};
+
+function hideOverlappingRows(topPosition, containerType = 'custom-container-4', leftPosition = '') {
+  if (containerType === 'custom-container-4') {
+    const rowsToHide = OVERLAP_MAP_4[topPosition] || [];
+    document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)').forEach(container => {
+      const styleTop = container.style.top;
+      if (rowsToHide.includes(styleTop)) {
+        container.style.display = 'none';
+      }
+    });
+  } else {
+    const positionsToHide = (OVERLAP_MAP_2[topPosition] && OVERLAP_MAP_2[topPosition][leftPosition]) || [];
+    document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)').forEach(container => {
+      const styleTop = container.style.top;
+      const styleLeft = container.style.left;
+      const matches = positionsToHide.some(pos => pos.top === styleTop && pos.left === styleLeft);
+      if (matches) {
+        container.style.display = 'none';
+      }
+    });
+  }
 }
 
-function showOverlappingRows(topPosition) {
-  const rowsToShow = OVERLAP_MAP[topPosition] || [];
-  document.querySelectorAll('.grid-item-container:not(.custom-container-4)').forEach(container => {
-    const styleTop = container.style.top;
-    if (rowsToShow.includes(styleTop)) {
-      container.style.display = '';
-      container.classList.remove('overlapped');
-    }
-  });
+function showOverlappingRows(topPosition, containerType = 'custom-container-4', leftPosition = '') {
+  if (containerType === 'custom-container-4') {
+    const rowsToShow = OVERLAP_MAP_4[topPosition] || [];
+    document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)').forEach(container => {
+      const styleTop = container.style.top;
+      if (rowsToShow.includes(styleTop)) {
+        container.style.display = '';
+        container.classList.remove('overlapped');
+      }
+    });
+  } else {
+    const positionsToShow = (OVERLAP_MAP_2[topPosition] && OVERLAP_MAP_2[topPosition][leftPosition]) || [];
+    document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)').forEach(container => {
+      const styleTop = container.style.top;
+      const styleLeft = container.style.left;
+      const matches = positionsToShow.some(pos => pos.top === styleTop && pos.left === styleLeft);
+      if (matches) {
+        container.style.display = '';
+        container.classList.remove('overlapped');
+      }
+    });
+  }
 }
 
 function addCustomContainerDragListeners() {
-  document.querySelectorAll('.grid-item.custom-size-4').forEach(gridItem => {
+  document.querySelectorAll('.grid-item.custom-size-4, .grid-item.custom-size-2').forEach(gridItem => {
     gridItem.draggable = true;
     gridItem.removeEventListener('dragstart', handleCustomContainerDragStart);
     gridItem.removeEventListener('dragend', handleCustomContainerDragEnd);
@@ -1429,10 +1690,17 @@ function addCustomContainerDragListeners() {
   });
 
   document.querySelectorAll('.grid-item-container.custom-container-4').forEach(container => {
-    container.removeEventListener('dragover', handleCustomContainerDragOver);
-    container.removeEventListener('drop', handleCustomContainerDrop);
-    container.addEventListener('dragover', handleCustomContainerDragOver);
-    container.addEventListener('drop', handleCustomContainerDrop);
+    container.removeEventListener('dragover', handleCustomContainer4DragOver);
+    container.removeEventListener('drop', handleCustomContainer4Drop);
+    container.addEventListener('dragover', handleCustomContainer4DragOver);
+    container.addEventListener('drop', handleCustomContainer4Drop);
+  });
+
+  document.querySelectorAll('.grid-item-container.custom-container-2').forEach(container => {
+    container.removeEventListener('dragover', handleCustomContainer2DragOver);
+    container.removeEventListener('drop', handleCustomContainer2Drop);
+    container.addEventListener('dragover', handleCustomContainer2DragOver);
+    container.addEventListener('drop', handleCustomContainer2Drop);
   });
 }
 
@@ -1440,7 +1708,11 @@ function handleCustomContainerDragEnd(e) {
   const gridItem = e.currentTarget;
   gridItem.style.opacity = '1';
 
-  const containers = document.querySelectorAll('.grid-item-container.custom-container-4');
+  document.querySelectorAll('.grid-item-container.custom-container-2').forEach(container => {
+    container.style.visibility = 'visible';
+  });
+
+  const containers = document.querySelectorAll('.grid-item-container.custom-container-4, .grid-item-container.custom-container-2');
 
   containers.forEach(customContainer => {
     const item = customContainer.querySelector('.grid-item');
@@ -1474,6 +1746,7 @@ function handleCustomContainerDragStart(e) {
   const hasContent = gridItem.style.backgroundImage && gridItem.style.backgroundImage !== 'none';
   const sourceTop = container.style.top;
   const sourceLeft = container.style.left;
+  const containerType = container.classList.contains('custom-container-4') ? 'custom-container-4' : 'custom-container-2';
 
   const dragData = {
     containerTop: sourceTop,
@@ -1481,12 +1754,19 @@ function handleCustomContainerDragStart(e) {
     url: hasContent ? gridItem.dataset.url : null,
     name: hasContent ? gridItem.dataset.name : null,
     isWeatherWidget: isWeatherWidget,
-    isFromCustomContainer: true
+    isFromCustomContainer: true,
+    containerType: containerType
   };
 
   e.dataTransfer.setData('text/plain', JSON.stringify(dragData));
 
   gridItem.style.opacity = '0.5';
+
+  if (containerType === 'custom-container-4') {
+    document.querySelectorAll('.grid-item-container.custom-container-2').forEach(container => {
+      container.style.visibility = 'hidden';
+    });
+  }
 }
 
 function handleCustomContainerDragOver(e) {
@@ -1496,6 +1776,7 @@ function handleCustomContainerDragOver(e) {
 
 function handleCustomContainerDrop(e) {
   e.preventDefault();
+  e.stopPropagation();
 
   const data = e.dataTransfer.getData('text/plain');
   if (!data) return;
@@ -1507,7 +1788,7 @@ function handleCustomContainerDrop(e) {
     const sourceUrl = sourceData.url;
     const sourceName = sourceData.name;
     const isSourceWeatherWidget = sourceData.isWeatherWidget;
-    const containers = Array.from(document.querySelectorAll('.grid-item-container.custom-container-4'));
+    const containers = Array.from(document.querySelectorAll('.grid-item-container.custom-container-4, .grid-item-container.custom-container-2'));
     const targetContainer = e.currentTarget;
     const sourceContainer = containers.find(container =>
       container.style.top === sourceTop && container.style.left === sourceLeft
@@ -1530,6 +1811,20 @@ function handleCustomContainerDrop(e) {
       }
       return;
     }
+
+    const sourceIsContainer4 = sourceContainer.classList.contains('custom-container-4');
+    const targetIsContainer4 = targetContainer.classList.contains('custom-container-4');
+
+    if (sourceIsContainer4 !== targetIsContainer4) {
+      containers.forEach(container => {
+        const gridItem = container.querySelector('.grid-item');
+        if (gridItem) {
+          gridItem.style.opacity = '1';
+        }
+      });
+      return;
+    }
+
     const sourceGridItem = sourceContainer.querySelector('.grid-item');
     const sourceIconLabel = sourceContainer.querySelector('.icon-label');
 
@@ -1540,7 +1835,7 @@ function handleCustomContainerDrop(e) {
     sourceGridItem.innerHTML = '';
     sourceGridItem.classList.remove('weather-widget');
     sourceGridItem.style.background = '';
-    sourceGridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+    sourceGridItem.style.border = 'none';
     sourceGridItem.style.flexDirection = '';
     sourceGridItem.style.alignItems = '';
     sourceGridItem.style.justifyContent = '';
@@ -1571,7 +1866,7 @@ function handleCustomContainerDrop(e) {
     targetGridItem.innerHTML = '';
     targetGridItem.classList.remove('weather-widget');
     targetGridItem.style.background = '';
-    targetGridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+    targetGridItem.style.border = 'none';
     targetGridItem.style.flexDirection = '';
     targetGridItem.style.alignItems = '';
     targetGridItem.style.justifyContent = '';
@@ -1655,9 +1950,10 @@ function handleCustomContainerDrop(e) {
     });
 
     const targetTop = targetContainer.style.top;
+    const targetLeft = targetContainer.style.left;
 
-    showOverlappingRows(sourceTop);
-    hideOverlappingRows(targetTop);
+    showOverlappingRows(sourceTop, sourceIsContainer4 ? 'custom-container-4' : 'custom-container-2', sourceLeft);
+    hideOverlappingRows(targetTop, targetIsContainer4 ? 'custom-container-4' : 'custom-container-2', targetLeft);
 
     updateOverlappingIcons();
     addCustomContainerDragListeners();
@@ -1667,15 +1963,352 @@ function handleCustomContainerDrop(e) {
   }
 }
 
+function handleCustomContainer4DragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function handleCustomContainer2DragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function handleCustomContainer4Drop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const data = e.dataTransfer.getData('text/plain');
+  if (!data) return;
+
+  try {
+    const sourceData = JSON.parse(data);
+    const sourceTop = sourceData.containerTop;
+    const sourceLeft = sourceData.containerLeft;
+    const sourceUrl = sourceData.url;
+    const sourceName = sourceData.name;
+    const isSourceWeatherWidget = sourceData.isWeatherWidget;
+
+    const containers = Array.from(document.querySelectorAll('.grid-item-container.custom-container-4'));
+    const targetContainer = e.currentTarget;
+
+    if (!targetContainer.classList.contains('custom-container-4')) {
+      containers.forEach(container => {
+        const gridItem = container.querySelector('.grid-item');
+        if (gridItem) {
+          gridItem.style.opacity = '1';
+        }
+      });
+      return;
+    }
+
+    const sourceContainer = containers.find(container =>
+      container.style.top === sourceTop && container.style.left === sourceLeft
+    );
+
+    if (!sourceContainer) {
+      containers.forEach(container => {
+        const gridItem = container.querySelector('.grid-item');
+        if (gridItem) {
+          gridItem.style.opacity = '1';
+        }
+      });
+      return;
+    }
+
+    if (sourceContainer === targetContainer) {
+      const gridItem = sourceContainer.querySelector('.grid-item');
+      if (gridItem) {
+        gridItem.style.opacity = '1';
+      }
+      return;
+    }
+
+    const sourceGridItem = sourceContainer.querySelector('.grid-item');
+    const sourceIconLabel = sourceContainer.querySelector('.icon-label');
+
+    const targetGridItem = targetContainer.querySelector('.grid-item');
+    const targetIconLabel = targetContainer.querySelector('.icon-label');
+
+    sourceGridItem.innerHTML = '';
+    sourceGridItem.classList.remove('weather-widget');
+    sourceGridItem.style.background = '';
+    sourceGridItem.style.border = 'none';
+    sourceGridItem.style.flexDirection = '';
+    sourceGridItem.style.alignItems = '';
+    sourceGridItem.style.justifyContent = '';
+    sourceGridItem.style.color = '';
+    sourceGridItem.style.fontFamily = '';
+    sourceGridItem.style.padding = '';
+    sourceGridItem.style.backgroundImage = '';
+    sourceGridItem.dataset.url = '';
+    sourceGridItem.dataset.name = '';
+    sourceGridItem.draggable = false;
+    delete sourceGridItem.dataset.isPreview;
+
+    const sourceDelIcon = sourceGridItem.querySelector('.delete-icon');
+    if (sourceDelIcon) sourceDelIcon.remove();
+
+    if (sourceIconLabel) {
+      sourceIconLabel.textContent = 'Messages';
+    }
+
+    sourceContainer.classList.remove('hidden');
+    sourceContainer.classList.remove('has-content');
+    sourceContainer.style.display = 'block';
+    sourceGridItem.style.border = 'none';
+
+    targetGridItem.innerHTML = '';
+    targetGridItem.classList.remove('weather-widget');
+    targetGridItem.style.background = '';
+    targetGridItem.style.border = 'none';
+    targetGridItem.style.flexDirection = '';
+    targetGridItem.style.alignItems = '';
+    targetGridItem.style.justifyContent = '';
+    targetGridItem.style.color = '';
+    targetGridItem.style.fontFamily = '';
+    targetGridItem.style.padding = '';
+    targetGridItem.style.backgroundImage = '';
+    targetGridItem.dataset.url = '';
+    targetGridItem.dataset.name = '';
+    targetGridItem.draggable = false;
+    delete targetGridItem.dataset.isPreview;
+
+    const targetDelIcon = targetGridItem.querySelector('.delete-icon');
+    if (targetDelIcon) targetDelIcon.remove();
+
+    if (isSourceWeatherWidget) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const weekdayNames = ['Sun', 'Mon', 'Tues', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const dateStr = `${monthNames[now.getMonth()]} ${now.getDate()}`;
+      const weekdayStr = weekdayNames[now.getDay()];
+
+      targetGridItem.innerHTML = `
+        <div class="weather-time" id="weather-time">${timeStr}</div>
+        <div class="weather-right">
+          <div class="weather-info">
+            <span class="weather-condition">Sunny</span>
+            <span class="weather-temp">25°C</span>
+            <img class="weather-icon" src="resources/sun.png" alt="Sun" />
+          </div>
+          <div class="weather-date-row">
+            <span class="weather-date" id="weather-date">${dateStr}</span>
+            <span class="weather-weekday" id="weather-weekday">${weekdayStr}</span>
+          </div>
+        </div>
+      `;
+      targetGridItem.classList.add('weather-widget');
+      targetGridItem.style.background = 'transparent';
+      targetGridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+      targetGridItem.style.flexDirection = 'row';
+      targetGridItem.style.alignItems = 'center';
+      targetGridItem.style.justifyContent = 'space-between';
+      targetGridItem.style.color = 'white';
+      targetGridItem.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      targetGridItem.style.padding = '0 10px';
+      targetGridItem.style.backgroundImage = '';
+      targetGridItem.dataset.url = '';
+      targetGridItem.dataset.name = '';
+      targetGridItem.draggable = true;
+    } else {
+      targetGridItem.style.backgroundImage = `url(${sourceUrl})`;
+      targetGridItem.style.backgroundSize = 'cover';
+      targetGridItem.style.backgroundPosition = 'center';
+      targetGridItem.style.backgroundRepeat = 'no-repeat';
+      targetGridItem.dataset.url = sourceUrl;
+      targetGridItem.dataset.name = sourceName;
+      targetGridItem.draggable = true;
+      targetGridItem.dataset.isPreview = 'true';
+      targetGridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+      addDeleteIcon(targetGridItem);
+    }
+
+    if (targetIconLabel) {
+      targetIconLabel.textContent = isSourceWeatherWidget ? 'Clock' : getIconLabel(sourceName);
+    }
+
+    targetContainer.classList.remove('hidden');
+    targetContainer.classList.add('has-content');
+    targetContainer.style.display = 'block';
+
+    containers.forEach(container => {
+      const gridItem = container.querySelector('.grid-item');
+      if (gridItem) {
+        gridItem.style.opacity = '1';
+      }
+    });
+
+    const targetTop = targetContainer.style.top;
+    const sourceTopVal = sourceContainer.style.top;
+
+    showOverlappingRows(sourceTopVal, 'custom-container-4');
+    hideOverlappingRows(targetTop, 'custom-container-4');
+
+    updateOverlappingIcons();
+    addCustomContainerDragListeners();
+
+  } catch (err) {
+    console.error('Failed to handle custom container 4 drop:', err);
+  }
+}
+
+function handleCustomContainer2Drop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const data = e.dataTransfer.getData('text/plain');
+  if (!data) return;
+
+  try {
+    const sourceData = JSON.parse(data);
+    const sourceTop = sourceData.containerTop;
+    const sourceLeft = sourceData.containerLeft;
+    const sourceUrl = sourceData.url;
+    const sourceName = sourceData.name;
+
+    const containers = Array.from(document.querySelectorAll('.grid-item-container.custom-container-2'));
+    const targetContainer = e.currentTarget;
+
+    if (!targetContainer.classList.contains('custom-container-2')) {
+      containers.forEach(container => {
+        const gridItem = container.querySelector('.grid-item');
+        if (gridItem) {
+          gridItem.style.opacity = '1';
+        }
+      });
+      return;
+    }
+
+    const sourceContainer = containers.find(container =>
+      container.style.top === sourceTop && container.style.left === sourceLeft
+    );
+
+    if (!sourceContainer) {
+      containers.forEach(container => {
+        const gridItem = container.querySelector('.grid-item');
+        if (gridItem) {
+          gridItem.style.opacity = '1';
+        }
+      });
+      return;
+    }
+
+    if (sourceContainer === targetContainer) {
+      const gridItem = sourceContainer.querySelector('.grid-item');
+      if (gridItem) {
+        gridItem.style.opacity = '1';
+      }
+      return;
+    }
+
+    const sourceGridItem = sourceContainer.querySelector('.grid-item');
+    const sourceIconLabel = sourceContainer.querySelector('.icon-label');
+
+    const targetGridItem = targetContainer.querySelector('.grid-item');
+    const targetIconLabel = targetContainer.querySelector('.icon-label');
+
+    sourceGridItem.innerHTML = '';
+    sourceGridItem.classList.remove('weather-widget');
+    sourceGridItem.style.background = '';
+    sourceGridItem.style.border = 'none';
+    sourceGridItem.style.flexDirection = '';
+    sourceGridItem.style.alignItems = '';
+    sourceGridItem.style.justifyContent = '';
+    sourceGridItem.style.color = '';
+    sourceGridItem.style.fontFamily = '';
+    sourceGridItem.style.padding = '';
+    sourceGridItem.style.backgroundImage = '';
+    sourceGridItem.dataset.url = '';
+    sourceGridItem.dataset.name = '';
+    sourceGridItem.draggable = false;
+    delete sourceGridItem.dataset.isPreview;
+
+    const sourceDelIcon = sourceGridItem.querySelector('.delete-icon');
+    if (sourceDelIcon) sourceDelIcon.remove();
+
+    if (sourceIconLabel) {
+      sourceIconLabel.textContent = 'Messages';
+    }
+
+    sourceContainer.classList.remove('hidden');
+    sourceContainer.classList.remove('has-content');
+    sourceContainer.style.display = 'block';
+    sourceGridItem.style.border = 'none';
+
+    targetGridItem.innerHTML = '';
+    targetGridItem.classList.remove('weather-widget');
+    targetGridItem.style.background = '';
+    targetGridItem.style.border = 'none';
+    targetGridItem.style.flexDirection = '';
+    targetGridItem.style.alignItems = '';
+    targetGridItem.style.justifyContent = '';
+    targetGridItem.style.color = '';
+    targetGridItem.style.fontFamily = '';
+    targetGridItem.style.padding = '';
+    targetGridItem.style.backgroundImage = '';
+    targetGridItem.dataset.url = '';
+    targetGridItem.dataset.name = '';
+    targetGridItem.draggable = false;
+    delete targetGridItem.dataset.isPreview;
+
+    const targetDelIcon = targetGridItem.querySelector('.delete-icon');
+    if (targetDelIcon) targetDelIcon.remove();
+
+    targetGridItem.style.backgroundImage = `url(${sourceUrl})`;
+    targetGridItem.style.backgroundSize = 'cover';
+    targetGridItem.style.backgroundPosition = 'center';
+    targetGridItem.style.backgroundRepeat = 'no-repeat';
+    targetGridItem.dataset.url = sourceUrl;
+    targetGridItem.dataset.name = sourceName;
+    targetGridItem.draggable = true;
+    targetGridItem.dataset.isPreview = 'true';
+    targetGridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+    addDeleteIcon(targetGridItem);
+
+    if (targetIconLabel) {
+      targetIconLabel.textContent = getIconLabel(sourceName);
+    }
+
+    targetContainer.classList.remove('hidden');
+    targetContainer.classList.add('has-content');
+    targetContainer.style.display = 'block';
+
+    containers.forEach(container => {
+      const gridItem = container.querySelector('.grid-item');
+      if (gridItem) {
+        gridItem.style.opacity = '1';
+      }
+    });
+
+    const targetTop = targetContainer.style.top;
+    const targetLeft = targetContainer.style.left;
+    const sourceTopVal = sourceContainer.style.top;
+    const sourceLeftVal = sourceContainer.style.left;
+
+    showOverlappingRows(sourceTopVal, 'custom-container-2', sourceLeftVal);
+    hideOverlappingRows(targetTop, 'custom-container-2', targetLeft);
+
+    updateOverlappingIcons();
+    addCustomContainerDragListeners();
+
+  } catch (err) {
+    console.error('Failed to handle custom container 2 drop:', err);
+  }
+}
+
 function fillIconGrids(imageFiles) {
-  const allGridContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.initially-hidden)');
+  const allGridContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2):not(.initially-hidden)');
 
   // 为所有容器设置data-index
   allGridContainers.forEach((container, index) => {
     container.dataset.index = index.toString();
   });
 
-  const gridContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.initially-hidden):not(.overlapped):not([style*="grid-column"]):not([style*="display: none"])');
+  const gridContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2):not(.initially-hidden):not(.overlapped):not([style*="grid-column"]):not([style*="display: none"])');
 
   let fileIndex = 0;
 
@@ -1736,43 +2369,101 @@ function addDeleteIcon(gridItem) {
   // 添加点击事件
   deleteIcon.addEventListener('click', (e) => {
     e.stopPropagation(); // 阻止事件冒泡
-    // 清除图标的背景和数据
-    gridItem.style.backgroundImage = '';
-    gridItem.dataset.url = '';
-    gridItem.dataset.name = '';
-    gridItem.draggable = false;
 
-    // 清除标签文本
-    const iconLabel = gridItem.nextElementSibling;
-    if (iconLabel && iconLabel.classList.contains('icon-label')) {
-      iconLabel.textContent = '';
-    }
-
-    // 移除删除图标
-    deleteIcon.remove();
-
-    // 移除 has-content 类
     const container = gridItem.parentElement;
-    container.classList.remove('has-content');
-    gridItem.style.border = 'none';
+    const isCustomContainer4 = container.classList.contains('custom-container-4');
+    const containerTop = container.style.top;
+    const containerLeft = container.style.left;
 
-    // 更新重叠图标状态
-    updateOverlappingIcons();
+    if (isCustomContainer4) {
+      const isWeatherWidget = gridItem.classList.contains('weather-widget');
+      const hasPreview = gridItem.dataset.isPreview === 'true' || (gridItem.style.backgroundImage && gridItem.style.backgroundImage !== 'none');
+
+      if (hasPreview && !isWeatherWidget) {
+        resetWeatherWidget(container);
+        showOverlappingRows(containerTop, 'custom-container-4');
+        updateOverlappingIcons();
+      } else {
+        gridItem.innerHTML = '';
+        gridItem.classList.remove('weather-widget');
+        gridItem.classList.remove('custom-size-4');
+        gridItem.style.backgroundImage = '';
+        gridItem.style.background = '';
+        gridItem.style.border = 'none';
+        gridItem.style.flexDirection = '';
+        gridItem.style.alignItems = '';
+        gridItem.style.justifyContent = '';
+        gridItem.style.color = '';
+        gridItem.style.fontFamily = '';
+        gridItem.style.padding = '';
+        gridItem.dataset.url = '';
+        gridItem.dataset.name = '';
+        gridItem.draggable = false;
+        delete gridItem.dataset.isPreview;
+
+        const iconLabel = container.querySelector('.icon-label');
+        if (iconLabel) iconLabel.textContent = 'Messages';
+
+        container.classList.remove('has-content');
+
+        const delIcon = gridItem.querySelector('.delete-icon');
+        if (delIcon) delIcon.remove();
+
+        showOverlappingRows(containerTop, 'custom-container-4');
+        updateOverlappingIcons();
+      }
+    } else {
+      // 清除图标的背景和数据
+      gridItem.style.backgroundImage = '';
+      gridItem.dataset.url = '';
+      gridItem.dataset.name = '';
+      gridItem.draggable = false;
+
+      // 清除标签文本
+      const iconLabel = gridItem.nextElementSibling;
+      if (iconLabel && iconLabel.classList.contains('icon-label')) {
+        iconLabel.textContent = '';
+      }
+
+      // 移除删除图标
+      deleteIcon.remove();
+
+      // 移除 has-content 类
+      container.classList.remove('has-content');
+      gridItem.style.border = 'none';
+
+      // 如果是custom-container-2，恢复被隐藏的普通grid-item-container
+      if (container.classList.contains('custom-container-2')) {
+        showOverlappingRows(containerTop, 'custom-container-2', containerLeft);
+      }
+
+      // 更新重叠图标状态
+      updateOverlappingIcons();
+    }
   });
 
   gridItem.appendChild(deleteIcon);
 }
 
 function addGridItemDragListeners() {
-  // 为所有grid-item添加dragstart事件
   document.querySelectorAll('.grid-item').forEach(item => {
-    if (item.draggable) {
+    item.removeEventListener('dragstart', handleGridItemDragStart);
+  });
+
+  document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)').forEach(container => {
+    container.removeEventListener('dragover', handleGridItemDragOver);
+    container.removeEventListener('drop', handleGridItemDrop);
+  });
+
+  document.querySelectorAll('.grid-item').forEach(item => {
+    const parentContainer = item.parentElement;
+    const isFromNormalContainer = !parentContainer.classList.contains('custom-container-4') && !parentContainer.classList.contains('custom-container-2');
+    if (item.draggable && isFromNormalContainer) {
       item.addEventListener('dragstart', handleGridItemDragStart);
     }
   });
 
-  // 为所有grid-item-container添加dragover和drop事件
-  document.querySelectorAll('.grid-item-container').forEach(container => {
+  document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)').forEach(container => {
     container.addEventListener('dragover', handleGridItemDragOver);
     container.addEventListener('drop', handleGridItemDrop);
   });
@@ -1781,7 +2472,7 @@ function addGridItemDragListeners() {
 function handleGridItemDragStart(e) {
   const item = e.currentTarget;
   const parentContainer = item.parentElement;
-  const isFromCustomContainer = parentContainer.classList.contains('custom-container-4');
+  const isFromCustomContainer = parentContainer.classList.contains('custom-container-4') || parentContainer.classList.contains('custom-container-2');
   const isWeatherWidget = item.classList.contains('weather-widget');
 
   // 使用位置信息而不是索引来更可靠地识别容器
@@ -1817,21 +2508,27 @@ function handleGridItemDrop(e) {
     const targetGridItem = targetContainer.querySelector('.grid-item');
     const targetIconLabel = targetContainer.querySelector('.icon-label');
 
-    // 首先通过位置和索引找到源容器
+    const isTargetContainer4 = targetContainer.classList.contains('custom-container-4');
+    const isTargetContainer2 = targetContainer.classList.contains('custom-container-2');
+
+    if (isTargetContainer4 || isTargetContainer2) {
+      document.querySelectorAll('.grid-item').forEach(gridItem => {
+        gridItem.style.opacity = '1';
+      });
+      return;
+    }
+
     let sourceContainer = null;
     if (item.containerTop !== undefined) {
-      // 优先通过位置查找（更可靠）
-      const allContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4)');
+      const allContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)');
       sourceContainer = Array.from(allContainers).find(container =>
         container.style.top === item.containerTop && container.style.left === item.containerLeft
       );
     }
-    // 如果位置没找到，再尝试用索引查找
     if (!sourceContainer && sourceIndex) {
       sourceContainer = document.querySelector(`.grid-item-container[data-index="${sourceIndex}"]`);
     }
 
-    // 检查是否是同一个容器
     if (sourceContainer && sourceContainer === targetContainer) {
       document.querySelectorAll('.grid-item').forEach(gridItem => {
         gridItem.style.opacity = '1';
@@ -1839,26 +2536,16 @@ function handleGridItemDrop(e) {
       return;
     }
 
-    if (item.isFromCustomContainer && !targetContainer.classList.contains('custom-container-4')) {
+    if (item.isFromCustomContainer) {
       document.querySelectorAll('.grid-item').forEach(gridItem => {
         gridItem.style.opacity = '1';
       });
       return;
     }
 
-    // 不允许将普通网格图标拖拽到 custom-container-4（preview区域），但允许custom-container-4之间的拖拽和从文件树拖入
-    if (targetContainer.classList.contains('custom-container-4') && (sourceIndex || (item.containerTop && !item.isFromCustomContainer))) {
-      document.querySelectorAll('.grid-item').forEach(gridItem => {
-        gridItem.style.opacity = '1';
-      });
-      return;
-    }
-
-    // 保存目标位置的原始内容
     const originalUrl = targetGridItem.dataset.url;
     const originalName = targetGridItem.dataset.name;
 
-    // 将拖拽的图标内容移动到目标位置
     targetGridItem.style.backgroundImage = `url(${item.url})`;
     targetGridItem.style.backgroundSize = 'cover';
     targetGridItem.style.backgroundPosition = 'center';
@@ -1871,11 +2558,9 @@ function handleGridItemDrop(e) {
       targetIconLabel.textContent = getIconLabel(item.name);
     }
 
-    // 为目标位置添加删除图标
     addDeleteIcon(targetGridItem);
     targetContainer.classList.add('has-content');
 
-    // 更新源容器
     if (sourceContainer) {
       const sourceGridItem = sourceContainer.querySelector('.grid-item');
       const sourceIconLabel = sourceContainer.querySelector('.icon-label');
@@ -1910,7 +2595,6 @@ function handleGridItemDrop(e) {
       }
     }
 
-    // 恢复所有元素的透明度
     document.querySelectorAll('.grid-item').forEach(gridItem => {
       gridItem.style.opacity = '1';
     });
@@ -2031,12 +2715,15 @@ function init() {
 
   hideOverlappingRows('18.7%');
 
-  document.querySelectorAll('.grid-item-container.custom-container-4').forEach(container => {
+  document.querySelectorAll('.grid-item-container.custom-container-4, .grid-item-container.custom-container-2').forEach(container => {
     const gridItem = container.querySelector('.grid-item');
     if (gridItem) {
       container.classList.remove('hidden');
       if (container.classList.contains('has-content')) {
         gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
+        if (gridItem.classList.contains('weather-widget')) {
+          addDeleteIcon(gridItem);
+        }
       } else {
         gridItem.style.border = 'none';
       }
@@ -2088,8 +2775,8 @@ function init() {
         setWallpaper(wallpaperUrl);
       }
 
-      const previewFiles = collectPreviewFiles(parsedFiles);
-      fillCustomContainers(previewFiles);
+      const previewFiles = await collectPreviewFilesWithDimensions(parsedFiles);
+      await fillCustomContainers(previewFiles);
 
       const iconFiles = collectIconFiles(parsedFiles);
       fillIconGrids(iconFiles);
@@ -2115,8 +2802,8 @@ function init() {
         setWallpaper(wallpaperUrl);
       }
 
-      const previewFiles = collectPreviewFiles(parsedFiles);
-      fillCustomContainers(previewFiles);
+      const previewFiles = await collectPreviewFilesWithDimensions(parsedFiles);
+      await fillCustomContainers(previewFiles);
 
       const iconFiles = collectIconFiles(parsedFiles);
       fillIconGrids(iconFiles);

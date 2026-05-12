@@ -39,7 +39,7 @@ body {
 }
 
 .sidebar {
-  width: 280px;
+  width: 340px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
@@ -168,10 +168,12 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   order: 2;
+  max-width: 180px;
 }
 
 .tree-preview {
-  width: 24px;
+  width: auto;
+  max-width: 48px;
   height: 24px;
   border-radius: 4px;
   overflow: hidden;
@@ -179,9 +181,9 @@ body {
 }
 
 .tree-preview img {
-  width: 100%;
+  width: auto;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .tree-children {
@@ -318,7 +320,8 @@ body {
   z-index: 1;
 }
 
-.grid-item-container.custom-container-4 {
+.grid-item-container.custom-container-4,
+.grid-item-container.custom-container-2 {
   transform: none;
 }
 
@@ -326,19 +329,23 @@ body {
   z-index: 2;
 }
 
-.grid-item-container.custom-container-4.has-content {
+.grid-item-container.custom-container-4.has-content,
+.grid-item-container.custom-container-2.has-content {
   z-index: 3;
 }
 
-.grid-item-container.custom-container-4.hidden {
+.grid-item-container.custom-container-4.hidden,
+.grid-item-container.custom-container-2.hidden {
   visibility: hidden;
 }
 
-.grid-item-container.custom-container-4 .icon-label {
+.grid-item-container.custom-container-4 .icon-label,
+.grid-item-container.custom-container-2 .icon-label {
   visibility: hidden !important;
 }
 
-.grid-item.custom-size-4 {
+.grid-item.custom-size-4,
+.grid-item.custom-size-2 {
   cursor: move;
 }
 
@@ -365,6 +372,12 @@ body {
 .grid-item.custom-size-4 {
   aspect-ratio: auto;
   width: 284px;
+  height: 142px;
+}
+
+.grid-item.custom-size-2 {
+  aspect-ratio: auto;
+  width: 142px;
   height: 142px;
 }
 
@@ -488,7 +501,7 @@ body {
 }
 
 .settings-panel {
-  width: 280px;
+  width: 340px;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border);
   padding: 16px;
