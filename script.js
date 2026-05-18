@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS = {
   showGrid: true,
   showText: true,
   snapThreshold: 24,
+  gridColor: '#FFFFFF',
 };
 
 const ICON_NAME_MAP = {
@@ -71,7 +72,13 @@ let state = {
 function setFiles(newFiles) {
   if (newFiles && newFiles.length > 0) {
     newFiles.forEach(folder => {
-      state.files.unshift(folder);
+      const exists = state.files.some(f => f.id === folder.id || f.name === folder.name);
+      if (!exists) {
+        state.files.push(folder);
+      }
+    });
+    state.files.sort((a, b) => {
+      return a.name.localeCompare(b.name, 'zh-CN');
     });
   }
   renderFileTree();
@@ -97,10 +104,98 @@ function setWallpaper(url) {
     if (url) {
       wallpaperElement.src = url;
       wallpaperElement.style.display = 'block';
+      wallpaperElement.onload = () => {
+        determineWallpaperColorAndSetTextColor();
+      };
     } else {
       wallpaperElement.style.display = 'none';
     }
   }
+}
+
+function determineWallpaperColorAndSetTextColor() {
+  const wallpaperElement = document.getElementById('wallpaper');
+  if (!wallpaperElement || !wallpaperElement.src) {
+    return;
+  }
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  canvas.width = 100;
+  canvas.height = 100;
+
+  ctx.drawImage(wallpaperElement, 0, 0, 100, 100);
+
+  const imageData = ctx.getImageData(0, 0, 100, 100);
+  const data = imageData.data;
+
+  let totalBrightness = 0;
+  const sampleStep = 5;
+
+  for (let i = 0; i < data.length; i += 4 * sampleStep) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+    totalBrightness += brightness;
+  }
+
+  const avgBrightness = totalBrightness / (100 * 100 / sampleStep);
+
+  const isDark = avgBrightness < 128;
+  const textColor = isDark ? '#FFFFFF' : '#000000';
+
+  updateTextColorBasedOnWallpaper(textColor);
+}
+
+function updateTextColorBasedOnWallpaper(textColor) {
+  state.settings.textColor = textColor;
+
+  const isDarkWallpaper = textColor === '#FFFFFF';
+  const gridColor = isDarkWallpaper ? '#FFFFFF' : '#000000';
+  state.settings.gridColor = gridColor;
+
+  document.querySelectorAll('.icon-label').forEach(label => {
+    label.style.color = textColor;
+  });
+
+  document.querySelectorAll('.weather-widget').forEach(widget => {
+    widget.style.color = textColor;
+  });
+
+  const statusBar = document.querySelector('.status-bar');
+  if (statusBar) {
+    statusBar.style.color = textColor;
+
+    const statusBarSvgs = statusBar.querySelectorAll('svg');
+    statusBarSvgs.forEach(svg => {
+      const rects = svg.querySelectorAll('rect');
+      rects.forEach(rect => {
+        rect.setAttribute('fill', textColor);
+      });
+    });
+  }
+
+  const textColorInput = document.querySelector('#text-color');
+  if (textColorInput) {
+    textColorInput.setAttribute('value', textColor);
+  }
+  const textColorValue = document.querySelector('#text-color-value');
+  if (textColorValue) {
+    textColorValue.textContent = textColor;
+  }
+
+  const gridColorInput = document.querySelector('#grid-color');
+  if (gridColorInput) {
+    gridColorInput.setAttribute('value', gridColor);
+  }
+  const gridColorValue = document.querySelector('#grid-color-value');
+  if (gridColorValue) {
+    gridColorValue.textContent = gridColor;
+  }
+
+  updateSettingsUI();
 }
 
 function setSettings(newSettings) {
@@ -152,6 +247,11 @@ function renderFileTree() {
     if (node.dataset.draggable === 'true') {
       node.addEventListener('dragstart', handleDragStart);
     }
+  });
+
+  // 添加收起/展开图标事件监听器
+  fileTreeElement.querySelectorAll('.tree-toggle').forEach(toggle => {
+    toggle.addEventListener('click', handleTreeToggleClick);
   });
 
   // 添加删除图标事件监听器
@@ -248,7 +348,7 @@ function renderTreeNode(node, level) {
   return `
     <div>
       <div
-        class="tree-node ${isSelected ? 'selected' : ''}"
+        class="tree-node ${isSelected ? 'selected' : ''} ${isRootLevel ? 'root-node' : ''}"
         data-id="${node.id}"
         data-type="${node.type}"
         data-draggable="${!isFolder && !!node.url}"
@@ -266,9 +366,7 @@ function renderTreeNode(node, level) {
           </span>
         ` : ''}
         ${hasChildren ? `
-          <span class="tree-toggle">
-            ${isExpanded ? '▼' : '▶'}
-          </span>
+          <span class="tree-toggle ${isExpanded ? 'expanded' : ''}"></span>
         ` : `
           <span class="tree-toggle-placeholder"></span>
         `}
@@ -294,6 +392,10 @@ function updateSettingsUI() {
   document.getElementById('show-text').checked = state.settings.showText;
   document.getElementById('snap-threshold').value = state.settings.snapThreshold;
   document.getElementById('snap-threshold-value').textContent = `${state.settings.snapThreshold}px`;
+  document.getElementById('grid-color').value = state.settings.gridColor;
+  document.getElementById('grid-color-value').textContent = state.settings.gridColor;
+
+  const gridColorWithOpacity = hexToRgba(state.settings.gridColor, 0.2);
 
   // 更新所有icon-label的文字颜色和显示状态
   document.querySelectorAll('.icon-label').forEach(label => {
@@ -303,6 +405,7 @@ function updateSettingsUI() {
     // 检查是否是初始隐藏的容器中的icon-label
     const isInitiallyHidden = label.closest('.grid-item-container.initially-hidden');
     if (!isDockItem && !isInitiallyHidden) {
+      label.style.display = state.settings.showText ? '' : 'none';
       label.style.visibility = state.settings.showText ? 'visible' : 'hidden';
     }
   });
@@ -312,13 +415,31 @@ function updateSettingsUI() {
     if (!item.classList.contains('custom-size-4') && !item.classList.contains('custom-size-2')) {
       item.style.width = `${state.settings.iconSize}px`;
       item.style.height = `${state.settings.iconSize}px`;
-      item.style.border = state.settings.showGrid ? '1px dashed rgba(255, 255, 255, 0.2)' : '1px dashed transparent';
+      item.style.border = state.settings.showGrid ? `1px dashed ${gridColorWithOpacity}` : '1px dashed transparent';
+
+      // 重新添加删除图标（如果容器有内容或曾经被删除过）
+      const container = item.parentElement;
+      if (container.classList.contains('has-content') || container.classList.contains('deleted')) {
+        addDeleteIcon(item);
+      }
     } else {
       const container = item.parentElement;
       const hasContent = container.classList.contains('has-content');
-      item.style.border = hasContent ? '1px dashed rgba(255, 255, 255, 0.2)' : 'none';
+      item.style.border = hasContent ? `1px dashed ${gridColorWithOpacity}` : 'none';
+
+      // 重新添加删除图标（如果容器有内容或曾经被删除过）
+      if (hasContent || container.classList.contains('deleted')) {
+        addDeleteIcon(item);
+      }
     }
   });
+}
+
+function hexToRgba(hex, opacity) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 
 // 模块: 拖拽区域事件处理
@@ -326,64 +447,275 @@ function handleDropZoneDragOver(e) {
   e.preventDefault();
   e.stopPropagation();
   e.dataTransfer.dropEffect = 'copy';
-  const dropZone = document.getElementById('drop-zone-folder');
-  if (dropZone) {
-    dropZone.classList.add('dragover');
-  }
+  e.currentTarget.classList.add('dragover');
 }
 
 function handleDropZoneDragLeave(e) {
   e.preventDefault();
   e.stopPropagation();
-  const dropZone = document.getElementById('drop-zone-folder');
-  if (dropZone) {
-    dropZone.classList.remove('dragover');
-  }
+  e.currentTarget.classList.remove('dragover');
 }
 
 function handleDropZoneDrop(e) {
   e.preventDefault();
   e.stopPropagation();
 
-  const dropZone = document.getElementById('drop-zone-folder');
-  if (dropZone) {
-    dropZone.classList.remove('dragover');
-  }
+  e.currentTarget.classList.remove('dragover');
 
   const items = e.dataTransfer.items;
   if (!items || items.length === 0) return;
 
-  handleDropZoneItems(items);
+  const isZipDropZone = e.currentTarget.id === 'drop-zone-zip';
+  handleDropZoneItems(items, isZipDropZone);
 }
 
-function handleDropZoneClick() {
-  const fileInput = document.getElementById('file-input');
-  if (fileInput) {
-    fileInput.click();
+function handleDropZoneClick(e) {
+  const dropZone = e.currentTarget;
+  if (dropZone.id === 'drop-zone-zip') {
+    const zipInput = document.getElementById('zip-input');
+    if (zipInput) {
+      zipInput.click();
+    }
+  } else {
+    const fileInput = document.getElementById('file-input');
+    if (fileInput) {
+      fileInput.click();
+    }
   }
 }
 
-async function handleDropZoneItems(items) {
-  const fileList = [];
+async function handleDropZoneItems(items, isZipDropZone = false) {
+  const allParsedFiles = [];
+  const promises = [];
+  const directoryEntries = [];
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    if (item.kind === 'file') {
-      const file = item.getAsFile();
-      if (file) {
-        fileList.push(file);
-      }
-    } else if (item.webkitGetAsEntry) {
+
+    if (item.webkitGetAsEntry) {
       const entry = item.webkitGetAsEntry();
       if (entry) {
-        await readDirectoryEntry(entry, '', fileList);
+        if (entry.isDirectory) {
+          directoryEntries.push(entry);
+        } else if (entry.isFile) {
+          const filePromise = new Promise((resolve) => {
+            entry.file(async (file) => {
+              if (isZipDropZone && file.name.toLowerCase().endsWith('.zip')) {
+                const parsedFiles = await parseZipFile(file);
+                allParsedFiles.push(...parsedFiles);
+              } else if (!isZipDropZone) {
+                const parsedFiles = await parseFiles([file]);
+                allParsedFiles.push(...parsedFiles);
+              }
+              resolve();
+            }, () => resolve());
+          });
+          promises.push(filePromise);
+        }
+      }
+    } else if (item.kind === 'file') {
+      const file = item.getAsFile();
+      if (file) {
+        if (isZipDropZone) {
+          if (file.name.toLowerCase().endsWith('.zip')) {
+            const parsedFiles = await parseZipFile(file);
+            allParsedFiles.push(...parsedFiles);
+          }
+        } else {
+          const parsedFiles = await parseFiles([file]);
+          allParsedFiles.push(...parsedFiles);
+        }
       }
     }
   }
 
-  if (fileList.length === 0) return;
+  for (const entry of directoryEntries) {
+    const parsedFiles = await parseDirectoryEntry(entry);
+    allParsedFiles.push(...parsedFiles);
+  }
 
-  handleDroppedFiles(fileList);
+  await Promise.all(promises);
+
+  if (allParsedFiles.length === 0) {
+    if (isZipDropZone) {
+      showNotification('请拖放 zip 文件', 'error');
+    } else {
+      showNotification('请拖放文件夹或图片文件', 'error');
+    }
+    return;
+  }
+
+  allParsedFiles.sort((a, b) => {
+    return a.name.localeCompare(b.name, 'zh-CN');
+  });
+
+  state.expandedFolders.clear();
+  if (allParsedFiles.length > 0) {
+    state.expandedFolders.add(allParsedFiles[0].id);
+  }
+
+  setFiles(allParsedFiles);
+
+  if (allParsedFiles.length > 0) {
+    const firstFolder = allParsedFiles[0];
+
+    const wallpaperUrl = findWallpaper([firstFolder]);
+    if (wallpaperUrl) {
+      setWallpaper(wallpaperUrl);
+    }
+
+    const previewFiles = await collectPreviewFilesWithDimensions([firstFolder]);
+    await fillCustomContainers(previewFiles);
+
+    const iconFiles = collectIconFiles([firstFolder]);
+    fillIconGrids(iconFiles);
+  }
+}
+
+async function parseDirectoryEntry(entry) {
+  const root = [];
+
+  const folderNode = {
+    id: `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    name: entry.name,
+    type: 'folder',
+    children: [],
+  };
+
+  await new Promise((resolve) => {
+    const dirReader = entry.createReader();
+
+    const readAllEntries = () => {
+      dirReader.readEntries((entries) => {
+        if (entries.length === 0) {
+          resolve();
+          return;
+        }
+        const promises = entries.map((subEntry) =>
+          readDirectoryEntryToNode(subEntry, folderNode)
+        );
+        Promise.all(promises).then(readAllEntries);
+      }, () => resolve());
+    };
+
+    readAllEntries();
+  });
+
+  const sortNodes = (nodes) => {
+    nodes.sort((a, b) => {
+      if (a.type === 'folder' && b.type === 'file') return -1;
+      if (a.type === 'file' && b.type === 'folder') return 1;
+      return a.name.localeCompare(b.name);
+    });
+    nodes.forEach(node => {
+      if (node.type === 'folder' && node.children) {
+        sortNodes(node.children);
+      }
+    });
+  };
+
+  if (folderNode.children) {
+    sortNodes(folderNode.children);
+  }
+
+  if (!state.folderName) {
+    state.folderName = entry.name;
+  }
+
+  state.importedResources.push({
+    type: 'folder',
+    name: entry.name,
+    files: []
+  });
+
+  root.push(folderNode);
+  return root;
+}
+
+async function readDirectoryEntryToNode(entry, parentNode) {
+  return new Promise((resolve) => {
+    if (entry.isFile) {
+      entry.file((file) => {
+        const fileName = entry.name;
+
+        if (isExcludedFile(fileName) && !isWallpaper(fileName)) {
+          resolve();
+          return;
+        }
+
+        if (!isImageFile(fileName)) {
+          resolve();
+          return;
+        }
+
+        const fileNode = {
+          id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          name: fileName,
+          type: 'file',
+          url: URL.createObjectURL(file),
+          file: file,
+        };
+
+        if (parentNode.children) {
+          parentNode.children.push(fileNode);
+        }
+
+        resolve();
+      }, () => resolve());
+    } else if (entry.isDirectory) {
+      const folderNode = {
+        id: `folder-${Date.now()}`,
+        name: entry.name,
+        type: 'folder',
+        children: [],
+      };
+
+      if (parentNode.children) {
+        parentNode.children.push(folderNode);
+      }
+
+      const dirReader = entry.createReader();
+
+      const readAllEntries = () => {
+        dirReader.readEntries((entries) => {
+          if (entries.length === 0) {
+            resolve();
+            return;
+          }
+          const promises = entries.map((subEntry) =>
+            readDirectoryEntryToNode(subEntry, folderNode)
+          );
+          Promise.all(promises).then(readAllEntries);
+        }, () => resolve());
+      };
+
+      readAllEntries();
+    } else {
+      resolve();
+    }
+  });
+}
+
+async function handleDroppedZipFile(zipFile) {
+  try {
+    const parsedFiles = await parseZipFile(zipFile);
+    setFiles(parsedFiles);
+
+    const wallpaperUrl = findWallpaper(parsedFiles);
+    if (wallpaperUrl) {
+      setWallpaper(wallpaperUrl);
+    }
+
+    const previewFiles = await collectPreviewFilesWithDimensions(parsedFiles);
+    await fillCustomContainers(previewFiles);
+
+    const iconFiles = collectIconFiles(parsedFiles);
+    fillIconGrids(iconFiles);
+
+  } catch (error) {
+    console.error('Error handling zip file:', error);
+    showNotification('导入失败，请重试', 'error');
+  }
 }
 
 async function readDirectoryEntry(entry, parentPath, fileList) {
@@ -462,6 +794,39 @@ function handleTreeNodeClick(e) {
   const id = node.dataset.id;
   const type = node.dataset.type;
 
+  setSelectedFile(id);
+
+  if (type === 'folder') {
+    const folderNode = findFileNodeById(state.files, id);
+    if (folderNode && state.files.some(f => f.id === id)) {
+      state.expandedFolders.clear();
+      state.expandedFolders.add(id);
+      renderFileTree();
+
+      const wallpaperUrl = findWallpaper([folderNode]);
+      if (wallpaperUrl) {
+        setWallpaper(wallpaperUrl);
+      }
+
+      collectPreviewFilesWithDimensions([folderNode]).then(previewFiles => {
+        fillCustomContainers(previewFiles);
+      });
+
+      const iconFiles = collectIconFiles([folderNode]);
+      fillIconGrids(iconFiles);
+    }
+  }
+}
+
+function handleTreeToggleClick(e) {
+  e.stopPropagation();
+  const toggle = e.currentTarget;
+  const node = toggle.closest('.tree-node');
+  if (!node) return;
+
+  const id = node.dataset.id;
+  const type = node.dataset.type;
+
   if (type === 'folder') {
     if (state.expandedFolders.has(id)) {
       state.expandedFolders.delete(id);
@@ -470,8 +835,6 @@ function handleTreeNodeClick(e) {
     }
     renderFileTree();
   }
-
-  setSelectedFile(id);
 }
 
 function handleDeleteFolder(e) {
@@ -597,6 +960,7 @@ function handleDrop(e) {
 
       targetContainer.classList.remove('hidden');
       targetContainer.classList.add('has-content');
+      targetContainer.classList.remove('deleted');
       targetContainer.style.display = 'block';
       if (gridItem) {
         gridItem.style.border = '1px dashed rgba(255, 255, 255, 0.2)';
@@ -636,9 +1000,12 @@ function handleDrop(e) {
 
         if (iconLabel) {
           iconLabel.textContent = getIconLabel(item.name);
+          iconLabel.style.display = '';
+          iconLabel.style.visibility = '';
         }
 
         container.classList.add('has-content');
+        container.classList.remove('deleted');
 
         addGridItemDragListeners();
       }
@@ -688,6 +1055,7 @@ function handleSettingsChange() {
     showGrid: document.getElementById('show-grid').checked,
     showText: document.getElementById('show-text').checked,
     snapThreshold: parseInt(document.getElementById('snap-threshold').value),
+    gridColor: document.getElementById('grid-color').value,
   });
 }
 
@@ -1020,32 +1388,39 @@ function showNotification(message, type = 'success') {
 
 function captureWorkspace(element) {
   return new Promise((resolve) => {
-    // 确保元素存在
     if (!element) {
       console.error('Element not found for capture');
       resolve(null);
       return;
     }
 
-    // 使用元素的原始尺寸
-    const targetWidth = element.offsetWidth;
-    const targetHeight = element.offsetHeight;
+    const targetWidth = 1080;
+    const targetHeight = 2340;
 
-    // 创建canvas并设置目标尺寸
     const canvas = document.createElement('canvas');
     canvas.width = targetWidth;
     canvas.height = targetHeight;
     const ctx = canvas.getContext('2d');
 
-    // 捕获元素内容
-    // 首先隐藏网格覆盖层，避免捕获到参考线
     const gridOverlay = element.querySelector('.grid-overlay');
     const gridOverlayVisible = gridOverlay ? gridOverlay.style.display : '';
     if (gridOverlay) {
       gridOverlay.style.display = 'none';
     }
 
-    // 临时隐藏内容为空的普通grid-item-container（非custom-container-4）
+    const originalBorderRadius = element.style.borderRadius;
+    element.style.borderRadius = '0';
+
+    const wallpaper = element.querySelector('.wallpaper');
+    if (wallpaper) {
+      wallpaper.style.borderRadius = '0';
+    }
+
+    const phoneContent = element.querySelector('.phone-content');
+    if (phoneContent) {
+      phoneContent.style.borderRadius = '0';
+    }
+
     const normalContainers = element.querySelectorAll('.grid-item-container:not(.custom-container-4)');
     const hiddenContainers = [];
     normalContainers.forEach(container => {
@@ -1057,57 +1432,67 @@ function captureWorkspace(element) {
       }
     });
 
-    // 临时移除grid-item的边框
     const gridItems = element.querySelectorAll('.grid-item');
     const originalBorders = [];
+    const originalItemBorderRadius = [];
     gridItems.forEach((item, index) => {
       originalBorders[index] = item.style.border;
+      originalItemBorderRadius[index] = item.style.borderRadius;
       item.style.border = 'none';
+      item.style.borderRadius = '0';
     });
 
-    // 使用html2canvas库来捕获内容
     if (typeof html2canvas !== 'undefined') {
       html2canvas(element, {
-        width: targetWidth,
-        height: targetHeight,
-        scale: 1, // 使用1倍缩放，因为我们已经设置了目标分辨率
-        useCORS: true, // 允许跨域图片
+        width: element.offsetWidth,
+        height: element.offsetHeight,
+        scale: targetWidth / element.offsetWidth,
+        useCORS: true,
         logging: false,
-        backgroundColor: null // 去除白色背景，使用透明背景
-      }).then(canvas => {
-        // 恢复网格覆盖层
+        backgroundColor: null
+      }).then(capturedCanvas => {
         if (gridOverlay) {
           gridOverlay.style.display = gridOverlayVisible;
         }
-        // 恢复隐藏的空容器
+        element.style.borderRadius = originalBorderRadius;
+        if (wallpaper) {
+          wallpaper.style.borderRadius = '';
+        }
+        if (phoneContent) {
+          phoneContent.style.borderRadius = '';
+        }
         hiddenContainers.forEach(container => {
           container.style.display = '';
         });
-        // 恢复grid-item的边框
         gridItems.forEach((item, index) => {
           item.style.border = originalBorders[index];
+          item.style.borderRadius = originalItemBorderRadius[index];
         });
+        ctx.drawImage(capturedCanvas, 0, 0, targetWidth, targetHeight);
         canvas.toBlob(resolve, 'image/png');
       }).catch(err => {
         console.error('html2canvas error:', err);
-        // 恢复网格覆盖层
         if (gridOverlay) {
           gridOverlay.style.display = gridOverlayVisible;
         }
-        // 恢复隐藏的空容器
+        element.style.borderRadius = originalBorderRadius;
+        if (wallpaper) {
+          wallpaper.style.borderRadius = '';
+        }
+        if (phoneContent) {
+          phoneContent.style.borderRadius = '';
+        }
         hiddenContainers.forEach(container => {
           container.style.display = '';
         });
-        // 恢复grid-item的边框
         gridItems.forEach((item, index) => {
           item.style.border = originalBorders[index];
+          item.style.borderRadius = originalItemBorderRadius[index];
         });
         resolve(null);
       });
     } else {
-      // 降级方案：使用DOMSnapshot
       try {
-        // 捕获元素的HTML
         const html = element.outerHTML;
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = html;
@@ -1116,46 +1501,53 @@ function captureWorkspace(element) {
         tempDiv.style.top = '-9999px';
         tempDiv.style.width = `${targetWidth}px`;
         tempDiv.style.height = `${targetHeight}px`;
-        tempDiv.style.backgroundColor = 'transparent'; // 确保背景透明
+        tempDiv.style.backgroundColor = 'transparent';
 
         document.body.appendChild(tempDiv);
 
-        // 等待元素渲染
         setTimeout(() => {
-          // 清空canvas，确保背景透明
           ctx.clearRect(0, 0, targetWidth, targetHeight);
-          // 绘制到canvas
           ctx.drawImage(tempDiv, 0, 0, targetWidth, targetHeight);
           document.body.removeChild(tempDiv);
 
-          // 恢复网格覆盖层
           if (gridOverlay) {
             gridOverlay.style.display = gridOverlayVisible;
           }
-          // 恢复隐藏的空容器
+          element.style.borderRadius = originalBorderRadius;
+          if (wallpaper) {
+            wallpaper.style.borderRadius = '';
+          }
+          if (phoneContent) {
+            phoneContent.style.borderRadius = '';
+          }
           hiddenContainers.forEach(container => {
             container.style.display = '';
           });
-          // 恢复grid-item的边框
           gridItems.forEach((item, index) => {
             item.style.border = originalBorders[index];
+            item.style.borderRadius = originalItemBorderRadius[index];
           });
 
           canvas.toBlob(resolve, 'image/png');
         }, 100);
       } catch (err) {
         console.error('Capture error:', err);
-        // 恢复网格覆盖层
         if (gridOverlay) {
           gridOverlay.style.display = gridOverlayVisible;
         }
-        // 恢复隐藏的空容器
+        element.style.borderRadius = originalBorderRadius;
+        if (wallpaper) {
+          wallpaper.style.borderRadius = '';
+        }
+        if (phoneContent) {
+          phoneContent.style.borderRadius = '';
+        }
         hiddenContainers.forEach(container => {
           container.style.display = '';
         });
-        // 恢复grid-item的边框
         gridItems.forEach((item, index) => {
           item.style.border = originalBorders[index];
+          item.style.borderRadius = originalItemBorderRadius[index];
         });
         resolve(null);
       }
@@ -1244,7 +1636,7 @@ function resetWeatherWidget(container) {
   gridItem.style.flexDirection = 'row';
   gridItem.style.alignItems = 'center';
   gridItem.style.justifyContent = 'space-between';
-  gridItem.style.color = 'white';
+  gridItem.style.color = state.settings.textColor;
   gridItem.style.fontFamily =
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   gridItem.style.padding = '0 10px';
@@ -2372,12 +2764,14 @@ function addDeleteIcon(gridItem) {
 
     const container = gridItem.parentElement;
     const isCustomContainer4 = container.classList.contains('custom-container-4');
+    const isCustomContainer2 = container.classList.contains('custom-container-2');
     const containerTop = container.style.top;
     const containerLeft = container.style.left;
+    const hasContent = gridItem.style.backgroundImage && gridItem.style.backgroundImage !== 'none';
 
     if (isCustomContainer4) {
       const isWeatherWidget = gridItem.classList.contains('weather-widget');
-      const hasPreview = gridItem.dataset.isPreview === 'true' || (gridItem.style.backgroundImage && gridItem.style.backgroundImage !== 'none');
+      const hasPreview = gridItem.dataset.isPreview === 'true' || hasContent;
 
       if (hasPreview && !isWeatherWidget) {
         resetWeatherWidget(container);
@@ -2412,33 +2806,61 @@ function addDeleteIcon(gridItem) {
         showOverlappingRows(containerTop, 'custom-container-4');
         updateOverlappingIcons();
       }
-    } else {
-      // 清除图标的背景和数据
+    } else if (isCustomContainer2) {
+      gridItem.innerHTML = '';
+      gridItem.classList.remove('weather-widget');
       gridItem.style.backgroundImage = '';
+      gridItem.style.background = '';
+      gridItem.style.border = 'none';
       gridItem.dataset.url = '';
       gridItem.dataset.name = '';
       gridItem.draggable = false;
+      delete gridItem.dataset.isPreview;
 
-      // 清除标签文本
-      const iconLabel = gridItem.nextElementSibling;
-      if (iconLabel && iconLabel.classList.contains('icon-label')) {
-        iconLabel.textContent = '';
-      }
+      const iconLabel = container.querySelector('.icon-label');
+      if (iconLabel) iconLabel.textContent = 'Messages';
 
-      // 移除删除图标
-      deleteIcon.remove();
-
-      // 移除 has-content 类
       container.classList.remove('has-content');
-      gridItem.style.border = 'none';
 
-      // 如果是custom-container-2，恢复被隐藏的普通grid-item-container
-      if (container.classList.contains('custom-container-2')) {
-        showOverlappingRows(containerTop, 'custom-container-2', containerLeft);
-      }
+      const delIcon = gridItem.querySelector('.delete-icon');
+      if (delIcon) delIcon.remove();
 
-      // 更新重叠图标状态
+      showOverlappingRows(containerTop, 'custom-container-2', containerLeft);
       updateOverlappingIcons();
+    } else {
+      if (hasContent) {
+        gridItem.style.backgroundImage = '';
+        gridItem.dataset.url = '';
+        gridItem.dataset.name = '';
+        gridItem.draggable = false;
+
+        const iconLabel = container.querySelector('.icon-label');
+        if (iconLabel) {
+          iconLabel.textContent = 'Messages';
+        }
+
+        container.classList.remove('has-content');
+        container.classList.add('deleted');
+
+        addDeleteIcon(gridItem);
+      } else {
+        gridItem.style.border = 'none';
+        gridItem.style.backgroundImage = '';
+        gridItem.dataset.url = '';
+        gridItem.dataset.name = '';
+        gridItem.draggable = false;
+
+        const iconLabel = container.querySelector('.icon-label');
+        if (iconLabel) {
+          iconLabel.style.display = 'none';
+        }
+
+        container.classList.remove('has-content');
+        container.classList.add('deleted');
+
+        const delIcon = gridItem.querySelector('.delete-icon');
+        if (delIcon) delIcon.remove();
+      }
     }
   });
 
@@ -2556,10 +2978,13 @@ function handleGridItemDrop(e) {
 
     if (targetIconLabel) {
       targetIconLabel.textContent = getIconLabel(item.name);
+      targetIconLabel.style.display = '';
+      targetIconLabel.style.visibility = '';
     }
 
     addDeleteIcon(targetGridItem);
     targetContainer.classList.add('has-content');
+    targetContainer.classList.remove('deleted');
 
     if (sourceContainer) {
       const sourceGridItem = sourceContainer.querySelector('.grid-item');
@@ -2578,11 +3003,9 @@ function handleGridItemDrop(e) {
           sourceGridItem.dataset.url = '';
           sourceGridItem.dataset.name = '';
           sourceGridItem.draggable = false;
-          const sourceDeleteIcon = sourceGridItem.querySelector('.delete-icon');
-          if (sourceDeleteIcon) {
-            sourceDeleteIcon.remove();
-          }
           sourceContainer.classList.remove('has-content');
+          sourceContainer.classList.add('deleted');
+          addDeleteIcon(sourceGridItem);
         }
       }
 
@@ -2709,9 +3132,7 @@ function downloadZip(blob, fileName) {
 
 // 模块: 初始化
 function init() {
-  // 渲染初始状态
   updateSettingsUI();
-  // renderGridOverlay();
 
   hideOverlappingRows('18.7%');
 
@@ -2727,6 +3148,13 @@ function init() {
       } else {
         gridItem.style.border = 'none';
       }
+    }
+  });
+
+  document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)').forEach(container => {
+    const gridItem = container.querySelector('.grid-item');
+    if (gridItem) {
+      addDeleteIcon(gridItem);
     }
   });
 
@@ -2746,21 +3174,21 @@ function init() {
   }
 
   // 为拖拽区域添加事件监听器
-  const dropZone = document.getElementById('drop-zone-folder');
-  if (dropZone) {
-    dropZone.addEventListener('dragover', handleDropZoneDragOver);
-    dropZone.addEventListener('dragleave', handleDropZoneDragLeave);
-    dropZone.addEventListener('drop', handleDropZoneDrop);
-    dropZone.addEventListener('click', handleDropZoneClick);
+  const folderDropZone = document.getElementById('drop-zone-folder');
+  if (folderDropZone) {
+    folderDropZone.addEventListener('dragover', handleDropZoneDragOver);
+    folderDropZone.addEventListener('dragleave', handleDropZoneDragLeave);
+    folderDropZone.addEventListener('drop', handleDropZoneDrop);
+    folderDropZone.addEventListener('click', handleDropZoneClick);
   }
 
-  document.getElementById('import-btn').addEventListener('click', () => {
-    document.getElementById('file-input').click();
-  });
-
-  document.getElementById('import-zip-btn').addEventListener('click', () => {
-    document.getElementById('zip-input').click();
-  });
+  const zipDropZone = document.getElementById('drop-zone-zip');
+  if (zipDropZone) {
+    zipDropZone.addEventListener('dragover', handleDropZoneDragOver);
+    zipDropZone.addEventListener('dragleave', handleDropZoneDragLeave);
+    zipDropZone.addEventListener('drop', handleDropZoneDrop);
+    zipDropZone.addEventListener('click', handleDropZoneClick);
+  }
 
   document.getElementById('file-input').addEventListener('change', async (e) => {
     const fileList = e.target.files;
@@ -2820,6 +3248,7 @@ function init() {
   document.getElementById('show-grid').addEventListener('change', handleSettingsChange);
   document.getElementById('show-text').addEventListener('change', handleSettingsChange);
   document.getElementById('snap-threshold').addEventListener('input', handleSettingsChange);
+  document.getElementById('grid-color').addEventListener('input', handleSettingsChange);
 
   document.getElementById('export-btn').addEventListener('click', handleExport);
 
