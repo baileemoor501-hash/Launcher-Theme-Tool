@@ -566,40 +566,87 @@ body {
   margin-bottom: 8px;
 }
 
-.color-picker {
+.color-picker-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
+  justify-content: space-between;
+  padding: 12px;
   background: var(--bg-tertiary);
   border-radius: 8px;
 }
 
-.color-picker input[type="color"] {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 50px;
+.color-label {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.color-picker-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.color-picker-row input[type="color"] {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
   cursor: pointer;
   background: none;
 }
 
-.color-value {
+.color-picker-row input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.color-picker-row input[type="color"]::-webkit-color-swatch {
+  border-radius: 50%;
+}
+
+.color-value-input {
+  width: 80px;
+  height: 28px;
+  padding: 0 8px;
   font-size: 14px;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-family: monospace;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+  outline: none;
+  cursor: text;
+}
+
+.color-value-input:focus {
+  border-color: var(--accent);
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+}
+
+.slider-label {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-right: 12px;
 }
 
 .slider-container {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: 1;
 }
 
 .slider-container input[type="range"] {
   flex: 1;
   height: 8px;
-  background: var(--bg-tertiary);
+  background: var(--bg-primary);
   border-radius: 4px;
   appearance: none;
   cursor: pointer;
@@ -616,8 +663,7 @@ body {
 
 .slider-value {
   font-size: 14px;
-  color: var(--accent);
-  min-width: 50px;
+  color: var(--text-primary);
   text-align: right;
 }
 
@@ -632,6 +678,72 @@ body {
 
 .toggle-row span {
   font-size: 14px;
+}
+
+.dropdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+}
+
+.dropdown-label {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.export-format-select {
+  width: 130px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238a8f9a' d='M10.293 3.293L6 7.586 1.707 3.293A1 1 0 00.293 4.707l5 5a1 1 0 001.414 0l5-5a1 1 0 10-1.414-1.414z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.export-format-select:focus {
+  border-color: var(--accent);
+}
+
+.export-format-select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.export-resolution-select {
+  width: 130px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238a8f9a' d='M10.293 3.293L6 7.586 1.707 3.293A1 1 0 00.293 4.707l5 5a1 1 0 001.414 0l5-5a1 1 0 10-1.414-1.414z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.export-resolution-select:focus {
+  border-color: var(--accent);
+}
+
+.export-resolution-select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .toggle {
@@ -688,24 +800,11 @@ body {
   cursor: pointer;
   font-size: 14px;
   font-weight: 600;
-  margin-top: 24px;
   transition: background 0.2s;
 }
 
 .export-btn:hover {
   background: var(--accent-hover);
-}
-
-.export-info {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.export-info p {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
 }
 
 .notification {

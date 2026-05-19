@@ -15,7 +15,6 @@ const DEFAULT_SETTINGS = {
   iconSize: 56,
   showGrid: true,
   showText: true,
-  snapThreshold: 24,
   gridColor: '#FFFFFF',
 };
 
@@ -66,6 +65,8 @@ let state = {
   expandedFolders: new Set(),
   folderName: null,
   importedResources: [],
+  currentFolderName: null,
+  lastImportedFolderName: null,
 };
 
 // 状态更新函数
@@ -179,20 +180,20 @@ function updateTextColorBasedOnWallpaper(textColor) {
 
   const textColorInput = document.querySelector('#text-color');
   if (textColorInput) {
-    textColorInput.setAttribute('value', textColor);
+    textColorInput.value = textColor;
   }
   const textColorValue = document.querySelector('#text-color-value');
   if (textColorValue) {
-    textColorValue.textContent = textColor;
+    textColorValue.value = textColor;
   }
 
   const gridColorInput = document.querySelector('#grid-color');
   if (gridColorInput) {
-    gridColorInput.setAttribute('value', gridColor);
+    gridColorInput.value = gridColor;
   }
   const gridColorValue = document.querySelector('#grid-color-value');
   if (gridColorValue) {
-    gridColorValue.textContent = gridColor;
+    gridColorValue.value = gridColor;
   }
 
   updateSettingsUI();
@@ -385,15 +386,13 @@ function renderTreeNode(node, level) {
 
 function updateSettingsUI() {
   document.getElementById('text-color').value = state.settings.textColor;
-  document.getElementById('text-color-value').textContent = state.settings.textColor;
+  document.getElementById('text-color-value').value = state.settings.textColor;
   document.getElementById('icon-size').value = state.settings.iconSize;
   document.getElementById('icon-size-value').textContent = `${state.settings.iconSize}px`;
   document.getElementById('show-grid').checked = state.settings.showGrid;
   document.getElementById('show-text').checked = state.settings.showText;
-  document.getElementById('snap-threshold').value = state.settings.snapThreshold;
-  document.getElementById('snap-threshold-value').textContent = `${state.settings.snapThreshold}px`;
   document.getElementById('grid-color').value = state.settings.gridColor;
-  document.getElementById('grid-color-value').textContent = state.settings.gridColor;
+  document.getElementById('grid-color-value').value = state.settings.gridColor;
 
   const gridColorWithOpacity = hexToRgba(state.settings.gridColor, 0.2);
 
@@ -550,30 +549,33 @@ async function handleDropZoneItems(items, isZipDropZone = false) {
   });
 
   state.expandedFolders.clear();
+  let lastFolder = null;
   if (allParsedFiles.length > 0) {
-    state.expandedFolders.add(allParsedFiles[0].id);
+    lastFolder = allParsedFiles[allParsedFiles.length - 1];
+    state.expandedFolders.add(lastFolder.id);
+    state.currentFolderName = lastFolder.name;
+    setSelectedFile(lastFolder.id);
   }
 
   setFiles(allParsedFiles);
 
-  if (allParsedFiles.length > 0) {
-    const firstFolder = allParsedFiles[0];
-
-    const wallpaperUrl = findWallpaper([firstFolder]);
-    if (wallpaperUrl) {
-      setWallpaper(wallpaperUrl);
+  if (lastFolder) {
+    const wallpaperInfo = findWallpaper([lastFolder]);
+    if (wallpaperInfo && wallpaperInfo.url) {
+      setWallpaper(wallpaperInfo.url);
     }
 
-    const previewFiles = await collectPreviewFilesWithDimensions([firstFolder]);
+    const previewFiles = await collectPreviewFilesWithDimensions([lastFolder]);
     await fillCustomContainers(previewFiles);
 
-    const iconFiles = collectIconFiles([firstFolder]);
+    const iconFiles = collectIconFiles([lastFolder]);
     fillIconGrids(iconFiles);
   }
 }
 
 async function parseDirectoryEntry(entry) {
   const root = [];
+  const folderFiles = [];
 
   const folderNode = {
     id: `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -592,7 +594,7 @@ async function parseDirectoryEntry(entry) {
           return;
         }
         const promises = entries.map((subEntry) =>
-          readDirectoryEntryToNode(subEntry, folderNode)
+          readDirectoryEntryToNode(subEntry, folderNode, folderFiles)
         );
         Promise.all(promises).then(readAllEntries);
       }, () => resolve());
@@ -622,17 +624,24 @@ async function parseDirectoryEntry(entry) {
     state.folderName = entry.name;
   }
 
+  state.lastImportedFolderName = entry.name;
+
   state.importedResources.push({
     type: 'folder',
     name: entry.name,
-    files: []
+    files: folderFiles
   });
+
+  state.expandedFolders.clear();
+  state.expandedFolders.add(folderNode.id);
+  state.currentFolderName = entry.name;
+  setSelectedFile(folderNode.id);
 
   root.push(folderNode);
   return root;
 }
 
-async function readDirectoryEntryToNode(entry, parentNode) {
+async function readDirectoryEntryToNode(entry, parentNode, folderFiles = []) {
   return new Promise((resolve) => {
     if (entry.isFile) {
       entry.file((file) => {
@@ -660,6 +669,8 @@ async function readDirectoryEntryToNode(entry, parentNode) {
           parentNode.children.push(fileNode);
         }
 
+        folderFiles.push(file);
+
         resolve();
       }, () => resolve());
     } else if (entry.isDirectory) {
@@ -683,7 +694,7 @@ async function readDirectoryEntryToNode(entry, parentNode) {
             return;
           }
           const promises = entries.map((subEntry) =>
-            readDirectoryEntryToNode(subEntry, folderNode)
+            readDirectoryEntryToNode(subEntry, folderNode, folderFiles)
           );
           Promise.all(promises).then(readAllEntries);
         }, () => resolve());
@@ -701,9 +712,9 @@ async function handleDroppedZipFile(zipFile) {
     const parsedFiles = await parseZipFile(zipFile);
     setFiles(parsedFiles);
 
-    const wallpaperUrl = findWallpaper(parsedFiles);
-    if (wallpaperUrl) {
-      setWallpaper(wallpaperUrl);
+    const wallpaperInfo = findWallpaper(parsedFiles);
+    if (wallpaperInfo && wallpaperInfo.url) {
+      setWallpaper(wallpaperInfo.url);
     }
 
     const previewFiles = await collectPreviewFilesWithDimensions(parsedFiles);
@@ -771,9 +782,9 @@ async function handleDroppedFiles(files) {
 
     setFiles(parsedFiles);
 
-    const wallpaperUrl = findWallpaper(parsedFiles);
-    if (wallpaperUrl) {
-      setWallpaper(wallpaperUrl);
+    const wallpaperInfo = findWallpaper(parsedFiles);
+    if (wallpaperInfo && wallpaperInfo.url) {
+      setWallpaper(wallpaperInfo.url);
     }
 
     const previewFiles = await collectPreviewFilesWithDimensions(parsedFiles);
@@ -803,9 +814,11 @@ function handleTreeNodeClick(e) {
       state.expandedFolders.add(id);
       renderFileTree();
 
-      const wallpaperUrl = findWallpaper([folderNode]);
-      if (wallpaperUrl) {
-        setWallpaper(wallpaperUrl);
+      state.currentFolderName = folderNode.name;
+
+      const wallpaperInfo = findWallpaper([folderNode]);
+      if (wallpaperInfo && wallpaperInfo.url) {
+        setWallpaper(wallpaperInfo.url);
       }
 
       collectPreviewFilesWithDimensions([folderNode]).then(previewFiles => {
@@ -1032,9 +1045,9 @@ async function handleFileChange(e) {
 
     setFiles(parsedFiles);
 
-    const wallpaperUrl = findWallpaper(parsedFiles);
-    if (wallpaperUrl) {
-      setWallpaper(wallpaperUrl);
+    const wallpaperInfo = findWallpaper(parsedFiles);
+    if (wallpaperInfo && wallpaperInfo.url) {
+      setWallpaper(wallpaperInfo.url);
     }
 
     const previewFiles = await collectPreviewFilesWithDimensions(parsedFiles);
@@ -1048,14 +1061,30 @@ async function handleFileChange(e) {
   }
 }
 
+function validateHexColor(value) {
+  if (!value) return null;
+  const normalizedValue = value.trim().toUpperCase();
+  const validHex = /^#[0-9A-F]{6}$|^#[0-9A-F]{3}$/;
+
+  if (validHex.test(normalizedValue)) {
+    if (normalizedValue.length === 4) {
+      const r = normalizedValue[1];
+      const g = normalizedValue[2];
+      const b = normalizedValue[3];
+      return `#${r}${r}${g}${g}${b}${b}`;
+    }
+    return normalizedValue;
+  }
+  return null;
+}
+
 function handleSettingsChange() {
   setSettings({
-    textColor: document.getElementById('text-color').value,
+    textColor: document.getElementById('text-color').value.toUpperCase(),
     iconSize: parseInt(document.getElementById('icon-size').value),
     showGrid: document.getElementById('show-grid').checked,
     showText: document.getElementById('show-text').checked,
-    snapThreshold: parseInt(document.getElementById('snap-threshold').value),
-    gridColor: document.getElementById('grid-color').value,
+    gridColor: document.getElementById('grid-color').value.toUpperCase(),
   });
 }
 
@@ -1067,10 +1096,19 @@ async function handleExport() {
   }
 
   try {
-    const previewBlob = await captureWorkspace(phoneScreen);
+    const formatSelect = document.getElementById('export-format');
+    const selectedFormat = formatSelect ? formatSelect.value : 'jpg';
+
+    const resolutionSelect = document.getElementById('export-resolution');
+    const selectedResolution = resolutionSelect ? resolutionSelect.value : '1080x2340';
+    const [width, height] = selectedResolution.split('x').map(Number);
+
+    const mimeType = `image/${selectedFormat}`;
+    const previewBlob = await captureWorkspace(phoneScreen, mimeType, width, height);
+
     const allFiles = [];
     collectFiles(state.files, allFiles);
-    await exportTheme(previewBlob, allFiles);
+    await exportTheme(previewBlob, allFiles, selectedFormat);
   } catch (err) {
     console.error('Export failed:', err);
     showNotification('导出失败，请重试', 'error');
@@ -1161,8 +1199,13 @@ async function parseZipFile(zipFile) {
       return a.name.localeCompare(b.name);
     });
 
+    state.expandedFolders.clear();
     state.expandedFolders.add(folderNode.id);
     root.push(folderNode);
+
+    state.lastImportedFolderName = folderName;
+    state.currentFolderName = folderName;
+    setSelectedFile(folderNode.id);
 
     return root;
   } catch (error) {
@@ -1176,22 +1219,35 @@ function parseFiles(fileList) {
     const root = [];
     const filesArray = Array.from(fileList);
 
-    if (filesArray.length > 0 && !state.folderName) {
-      const firstFile = filesArray[0];
-      const path = firstFile.webkitRelativePath || firstFile.name;
+    const folderGroups = {};
+    filesArray.forEach(file => {
+      const path = file.webkitRelativePath || file.name;
       const parts = path.split('/').filter(Boolean);
-      if (parts.length > 1) {
-        state.folderName = parts[0];
-      } else {
-        state.folderName = 'theme';
+      if (parts.length > 0) {
+        const folderName = parts.length > 1 ? parts[0] : 'theme';
+        if (!folderGroups[folderName]) {
+          folderGroups[folderName] = [];
+        }
+        folderGroups[folderName].push(file);
       }
+    });
+
+    const folderNames = Object.keys(folderGroups);
+    folderNames.forEach(folderName => {
+      state.importedResources.push({
+        type: 'folder',
+        name: folderName,
+        files: folderGroups[folderName]
+      });
+    });
+
+    if (!state.folderName && folderNames.length > 0) {
+      state.folderName = folderNames[0];
     }
 
-    state.importedResources.push({
-      type: 'folder',
-      name: state.folderName || 'theme',
-      files: filesArray
-    });
+    if (folderNames.length > 0) {
+      state.lastImportedFolderName = folderNames[folderNames.length - 1];
+    }
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
@@ -1251,11 +1307,14 @@ function parseFiles(fileList) {
 
     sortNodes(root);
 
-    root.forEach(node => {
-      if (node.type === 'folder') {
-        state.expandedFolders.add(node.id);
-      }
-    });
+    state.expandedFolders.clear();
+    const lastFolder = root.filter(node => node.type === 'folder').pop();
+    if (lastFolder) {
+      state.expandedFolders.add(lastFolder.id);
+      state.currentFolderName = lastFolder.name;
+      setSelectedFile(lastFolder.id);
+    }
+
     resolve(root);
   });
 }
@@ -1283,13 +1342,14 @@ function isWallpaper(filename) {
   return name === 'wallpaper';
 }
 
-function findWallpaper(nodes) {
+function findWallpaper(nodes, folderName = '') {
   for (const node of nodes) {
+    const currentFolder = node.type === 'folder' ? node.name : folderName;
     if (node.type === 'file' && isWallpaper(node.name) && node.url) {
-      return node.url;
+      return { url: node.url, folderName: currentFolder };
     }
     if (node.type === 'folder' && node.children) {
-      const found = findWallpaper(node.children);
+      const found = findWallpaper(node.children, currentFolder);
       if (found) return found;
     }
   }
@@ -1386,16 +1446,13 @@ function showNotification(message, type = 'success') {
   }, 3000);
 }
 
-function captureWorkspace(element) {
+function captureWorkspace(element, mimeType = 'image/jpeg', targetWidth = 1080, targetHeight = 2340) {
   return new Promise((resolve) => {
     if (!element) {
       console.error('Element not found for capture');
       resolve(null);
       return;
     }
-
-    const targetWidth = 1080;
-    const targetHeight = 2340;
 
     const canvas = document.createElement('canvas');
     canvas.width = targetWidth;
@@ -1469,7 +1526,7 @@ function captureWorkspace(element) {
           item.style.borderRadius = originalItemBorderRadius[index];
         });
         ctx.drawImage(capturedCanvas, 0, 0, targetWidth, targetHeight);
-        canvas.toBlob(resolve, 'image/png');
+        canvas.toBlob(resolve, mimeType);
       }).catch(err => {
         console.error('html2canvas error:', err);
         if (gridOverlay) {
@@ -3043,7 +3100,7 @@ function collectAllFilesForExport(nodes, parentPath = '') {
   return allFiles;
 }
 
-async function exportTheme(previewBlob, files) {
+async function exportTheme(previewBlob, files, format = 'jpg') {
   if (!previewBlob) {
     console.error('No preview blob to export');
     showNotification('导出失败：无法获取预览图', 'error');
@@ -3053,18 +3110,23 @@ async function exportTheme(previewBlob, files) {
   try {
     const zip = new JSZip();
 
-    zip.file('theme_preview.png', previewBlob);
+    const folderToExport = state.currentFolderName || state.lastImportedFolderName;
+    const previewFileName = folderToExport ? `${folderToExport}.${format}` : `theme_preview.${format}`;
+    zip.file(previewFileName, previewBlob);
 
     for (const resource of state.importedResources) {
-      if (resource.type === 'zip') {
-        zip.file(resource.name, resource.file);
-      } else if (resource.type === 'folder') {
-        const folderName = resource.name;
-        resource.files.forEach(file => {
-          const path = file.webkitRelativePath || file.name;
-          const fullPath = path.startsWith(folderName) ? path : `${folderName}/${path}`;
-          zip.file(fullPath, file);
-        });
+      if (resource.name === folderToExport) {
+        if (resource.type === 'zip') {
+          zip.file(resource.name, resource.file);
+        } else if (resource.type === 'folder') {
+          const folderName = resource.name;
+          resource.files.forEach(file => {
+            const path = file.webkitRelativePath || file.name;
+            const fullPath = path.startsWith(folderName) ? path : `${folderName}/${path}`;
+            zip.file(fullPath, file);
+          });
+        }
+        break;
       }
     }
 
@@ -3077,7 +3139,7 @@ async function exportTheme(previewBlob, files) {
 
     const zipBlob = await zip.generateAsync({ type: 'blob' });
 
-    const zipFileName = state.folderName ? `${state.folderName}.zip` : 'theme-resources.zip';
+    const zipFileName = folderToExport ? `${folderToExport}.zip` : 'theme-resources.zip';
 
     const uploadResult = await uploadToOSS(zipBlob, zipFileName);
 
@@ -3091,18 +3153,24 @@ async function exportTheme(previewBlob, files) {
     console.error('Export failed:', error);
     showNotification('导出失败，已为您下载本地文件', 'error');
     const zip = new JSZip();
-    zip.file('theme_preview.png', previewBlob);
+
+    const folderToExport = state.currentFolderName || state.lastImportedFolderName;
+    const previewFileName = folderToExport ? `${folderToExport}.${format}` : `theme_preview.${format}`;
+    zip.file(previewFileName, previewBlob);
 
     for (const resource of state.importedResources) {
-      if (resource.type === 'zip') {
-        zip.file(resource.name, resource.file);
-      } else if (resource.type === 'folder') {
-        const folderName = resource.name;
-        resource.files.forEach(file => {
-          const path = file.webkitRelativePath || file.name;
-          const fullPath = path.startsWith(folderName) ? path : `${folderName}/${path}`;
-          zip.file(fullPath, file);
-        });
+      if (resource.name === folderToExport) {
+        if (resource.type === 'zip') {
+          zip.file(resource.name, resource.file);
+        } else if (resource.type === 'folder') {
+          const folderName = resource.name;
+          resource.files.forEach(file => {
+            const path = file.webkitRelativePath || file.name;
+            const fullPath = path.startsWith(folderName) ? path : `${folderName}/${path}`;
+            zip.file(fullPath, file);
+          });
+        }
+        break;
       }
     }
 
@@ -3114,7 +3182,7 @@ async function exportTheme(previewBlob, files) {
     }
 
     const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const zipFileName = state.folderName ? `${state.folderName}.zip` : 'theme-resources.zip';
+    const zipFileName = folderToExport ? `${folderToExport}.zip` : 'theme-resources.zip';
     downloadZip(zipBlob, zipFileName);
   }
 }
@@ -3198,9 +3266,9 @@ function init() {
       const parsedFiles = await parseFiles(fileList);
       setFiles(parsedFiles);
 
-      const wallpaperUrl = findWallpaper(parsedFiles);
-      if (wallpaperUrl) {
-        setWallpaper(wallpaperUrl);
+      const wallpaperInfo = findWallpaper(parsedFiles);
+      if (wallpaperInfo && wallpaperInfo.url) {
+        setWallpaper(wallpaperInfo.url);
       }
 
       const previewFiles = await collectPreviewFilesWithDimensions(parsedFiles);
@@ -3225,9 +3293,9 @@ function init() {
       const parsedFiles = await parseZipFile(zipFile);
       setFiles(parsedFiles);
 
-      const wallpaperUrl = findWallpaper(parsedFiles);
-      if (wallpaperUrl) {
-        setWallpaper(wallpaperUrl);
+      const wallpaperInfo = findWallpaper(parsedFiles);
+      if (wallpaperInfo && wallpaperInfo.url) {
+        setWallpaper(wallpaperInfo.url);
       }
 
       const previewFiles = await collectPreviewFilesWithDimensions(parsedFiles);
@@ -3243,12 +3311,36 @@ function init() {
     e.target.value = '';
   });
 
-  document.getElementById('text-color').addEventListener('input', handleSettingsChange);
+  // 文字颜色处理 - 使用 input 事件实现实时更新
+  document.getElementById('text-color').addEventListener('input', function () {
+    const color = this.value.toUpperCase();
+    document.getElementById('text-color-value').value = color;
+    handleSettingsChange();
+  });
+  document.getElementById('text-color-value').addEventListener('input', function () {
+    const validColor = validateHexColor(this.value);
+    if (validColor) {
+      document.getElementById('text-color').value = validColor;
+      handleSettingsChange();
+    }
+  });
+  // 网格颜色处理 - 使用 input 事件实现实时更新
+  document.getElementById('grid-color').addEventListener('input', function () {
+    const color = this.value.toUpperCase();
+    document.getElementById('grid-color-value').value = color;
+    handleSettingsChange();
+  });
+  document.getElementById('grid-color-value').addEventListener('input', function () {
+    const validColor = validateHexColor(this.value);
+    if (validColor) {
+      document.getElementById('grid-color').value = validColor;
+      handleSettingsChange();
+    }
+  });
+  // 其他设置
   document.getElementById('icon-size').addEventListener('input', handleSettingsChange);
   document.getElementById('show-grid').addEventListener('change', handleSettingsChange);
   document.getElementById('show-text').addEventListener('change', handleSettingsChange);
-  document.getElementById('snap-threshold').addEventListener('input', handleSettingsChange);
-  document.getElementById('grid-color').addEventListener('input', handleSettingsChange);
 
   document.getElementById('export-btn').addEventListener('click', handleExport);
 
