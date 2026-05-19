@@ -661,6 +661,8 @@ async function handleDropZoneItems(items, isZipDropZone = false) {
     const iconFiles = collectIconFiles([lastFolder]);
     fillIconGrids(iconFiles);
   }
+
+  updateCache();
 }
 
 async function parseDirectoryEntry(entry) {
@@ -813,6 +815,7 @@ async function handleDroppedZipFile(zipFile) {
     const iconFiles = collectIconFiles(parsedFiles);
     fillIconGrids(iconFiles);
 
+    updateCache();
   } catch (error) {
     console.error('Error handling zip file:', error);
     showNotification('导入失败，请重试', 'error');
@@ -883,6 +886,7 @@ async function handleDroppedFiles(files) {
     const iconFiles = collectIconFiles(parsedFiles);
     fillIconGrids(iconFiles);
 
+    updateCache();
   } catch (error) {
     console.error('Error handling dropped files:', error);
     showNotification('导入失败，请重试', 'error');
@@ -1011,6 +1015,9 @@ function handleDeleteFolder(e) {
     state.importedResources = [];
     state.foldersRoot = null;
     state.zipsRoot = null;
+    state.wallpaper = null;
+    clearCache();
+
     document.querySelectorAll('.grid-item').forEach(gridItem => {
       gridItem.style.backgroundImage = '';
       gridItem.dataset.url = '';
@@ -1026,6 +1033,17 @@ function handleDeleteFolder(e) {
     document.querySelectorAll('.icon-label').forEach(label => {
       label.textContent = 'Messages';
     });
+
+    const wallpaperElement = document.getElementById('wallpaper');
+    if (wallpaperElement) {
+      wallpaperElement.style.display = 'none';
+      wallpaperElement.src = '';
+    }
+
+    showNotification('已清除所有导入的内容', 'success');
+  } else {
+    updateCache();
+    showNotification('文件夹已删除', 'success');
   }
 }
 
@@ -3272,9 +3290,204 @@ function downloadZip(blob, fileName) {
   URL.revokeObjectURL(url);
 }
 
+// 模块: 本地缓存
+const STORAGE_KEY = 'theme-tool-cache';
+
+function saveToCache(data) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (error) {
+    console.warn('Failed to save to cache:', error);
+  }
+}
+
+function loadFromCache() {
+  try {
+    const cached = localStorage.getItem(STORAGE_KEY);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (error) {
+    console.warn('Failed to load from cache:', error);
+  }
+  return null;
+}
+
+function clearCache() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (error) {
+    console.warn('Failed to clear cache:', error);
+  }
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
+function base64ToBlob(base64) {
+  return fetch(base64).then(response => response.blob());
+}
+
+async function convertNodeToCache(node) {
+  if (!node) return null;
+
+  const cacheNode = {
+    id: node.id,
+    name: node.name,
+    type: node.type,
+  };
+
+  if (node.type === 'file' && node.file) {
+    try {
+      cacheNode.data = await blobToBase64(node.file);
+    } catch (error) {
+      console.warn('Failed to convert file to base64:', error);
+    }
+  }
+
+  if (node.type === 'folder' && node.children) {
+    cacheNode.children = await Promise.all(node.children.map(child => convertNodeToCache(child)));
+    cacheNode.children = cacheNode.children.filter(Boolean);
+  }
+
+  return cacheNode;
+}
+
+async function convertCacheToNode(cacheNode) {
+  if (!cacheNode) return null;
+
+  const node = {
+    id: cacheNode.id,
+    name: cacheNode.name,
+    type: cacheNode.type,
+  };
+
+  if (cacheNode.type === 'file' && cacheNode.data) {
+    try {
+      const blob = await base64ToBlob(cacheNode.data);
+      node.file = blob;
+      node.url = URL.createObjectURL(blob);
+    } catch (error) {
+      console.warn('Failed to convert base64 to blob:', error);
+    }
+  }
+
+  if (cacheNode.type === 'folder' && cacheNode.children) {
+    node.children = await Promise.all(cacheNode.children.map(child => convertCacheToNode(child)));
+    node.children = node.children.filter(Boolean);
+  }
+
+  return node;
+}
+
+async function createCacheData() {
+  const foldersRoot = state.foldersRoot ? await convertNodeToCache(state.foldersRoot) : null;
+  const zipsRoot = state.zipsRoot ? await convertNodeToCache(state.zipsRoot) : null;
+
+  let wallpaperData = null;
+  if (state.wallpaper && state.wallpaper.startsWith('blob:')) {
+    try {
+      const response = await fetch(state.wallpaper);
+      const blob = await response.blob();
+      wallpaperData = await blobToBase64(blob);
+    } catch (error) {
+      console.warn('Failed to cache wallpaper:', error);
+    }
+  } else if (state.wallpaper && state.wallpaper.startsWith('data:')) {
+    wallpaperData = state.wallpaper;
+  }
+
+  return {
+    foldersRoot,
+    zipsRoot,
+    lastImportedFolderName: state.lastImportedFolderName,
+    settings: state.settings,
+    wallpaper: wallpaperData,
+  };
+}
+
+async function restoreFromCacheData(cacheData) {
+  if (!cacheData) return false;
+
+  try {
+    if (cacheData.foldersRoot) {
+      state.foldersRoot = await convertCacheToNode(cacheData.foldersRoot);
+    }
+    if (cacheData.zipsRoot) {
+      state.zipsRoot = await convertCacheToNode(cacheData.zipsRoot);
+    }
+    if (cacheData.lastImportedFolderName) {
+      state.lastImportedFolderName = cacheData.lastImportedFolderName;
+    }
+    if (cacheData.settings) {
+      state.settings = { ...state.settings, ...cacheData.settings };
+    }
+    if (cacheData.wallpaper && cacheData.wallpaper.startsWith('data:')) {
+      state.wallpaper = cacheData.wallpaper;
+    }
+
+    state.files = [];
+    if (state.foldersRoot && state.foldersRoot.children && state.foldersRoot.children.length > 0) {
+      state.files.push(state.foldersRoot);
+    }
+    if (state.zipsRoot && state.zipsRoot.children && state.zipsRoot.children.length > 0) {
+      state.files.push(state.zipsRoot);
+    }
+
+    renderFileTree();
+    updateSettingsUI();
+
+    if (state.wallpaper && state.wallpaper.startsWith('data:')) {
+      setWallpaper(state.wallpaper);
+    }
+
+    if (state.files.length > 0) {
+      const lastFolder = state.files[state.files.length - 1];
+      if (lastFolder.children && lastFolder.children.length > 0) {
+        const selectedFolder = lastFolder.children[lastFolder.children.length - 1];
+        state.currentFolderName = selectedFolder.name;
+        state.expandedFolders.add('root-folders');
+        state.expandedFolders.add(selectedFolder.id);
+        setSelectedFile(selectedFolder.id);
+
+        const wallpaperInfo = findWallpaper([selectedFolder]);
+        if (wallpaperInfo && wallpaperInfo.url) {
+          setWallpaper(wallpaperInfo.url);
+        }
+
+        const previewFiles = await collectPreviewFilesWithDimensions([selectedFolder]);
+        await fillCustomContainers(previewFiles);
+
+        const iconFiles = collectIconFiles([selectedFolder]);
+        fillIconGrids(iconFiles);
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Failed to restore from cache:', error);
+    return false;
+  }
+}
+
+async function updateCache() {
+  const cacheData = await createCacheData();
+  saveToCache(cacheData);
+}
+
 // 模块: 初始化
 function init() {
   updateSettingsUI();
+
+  const cachedData = loadFromCache();
+  if (cachedData) {
+    restoreFromCacheData(cachedData);
+  }
 
   hideOverlappingRows('18.7%');
 
@@ -3351,6 +3564,7 @@ function init() {
       const iconFiles = collectIconFiles(parsedFiles);
       fillIconGrids(iconFiles);
 
+      updateCache();
     } catch (error) {
       console.error('Error parsing folder:', error);
     }
@@ -3378,6 +3592,7 @@ function init() {
       const iconFiles = collectIconFiles(parsedFiles);
       fillIconGrids(iconFiles);
 
+      updateCache();
     } catch (error) {
       console.error('Error parsing zip file:', error);
     }
