@@ -185,8 +185,8 @@ body {
 }
 
 .tree-node:hover>.tree-delete {
-  width: 28px;
-  height: 28px;
+  width: 19px;
+  height: 19px;
 }
 
 .tree-toggle-placeholder {
@@ -226,10 +226,17 @@ body {
 
 .tree-children {
   padding-left: 8px;
+}
+
+.tree-children-scroll {
   max-height: 222px;
   overflow-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+.tree-children-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .tree-children::-webkit-scrollbar {

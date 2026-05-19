@@ -67,26 +67,67 @@ let state = {
   importedResources: [],
   currentFolderName: null,
   lastImportedFolderName: null,
+  foldersRoot: null,
+  zipsRoot: null,
 };
+
+function ensureRootFolders() {
+  if (!state.foldersRoot) {
+    state.foldersRoot = {
+      id: 'root-folders',
+      name: '文件夹',
+      type: 'folder',
+      children: [],
+    };
+  }
+  if (!state.zipsRoot) {
+    state.zipsRoot = {
+      id: 'root-zips',
+      name: 'zip包',
+      type: 'folder',
+      children: [],
+    };
+  }
+}
+
+function addFileToRoot(file, isZip = false) {
+  ensureRootFolders();
+
+  const targetRoot = isZip ? state.zipsRoot : state.foldersRoot;
+  const exists = targetRoot.children.some(f => f.id === file.id || f.name === file.name);
+
+  if (!exists) {
+    targetRoot.children.push(file);
+    targetRoot.children.sort((a, b) => {
+      return a.name.localeCompare(b.name, 'zh-CN');
+    });
+  }
+}
 
 // 状态更新函数
 function setFiles(newFiles) {
   if (newFiles && newFiles.length > 0) {
-    newFiles.forEach(folder => {
-      const exists = state.files.some(f => f.id === folder.id || f.name === folder.name);
-      if (!exists) {
-        state.files.push(folder);
-      }
-    });
-    state.files.sort((a, b) => {
-      return a.name.localeCompare(b.name, 'zh-CN');
+    newFiles.forEach(file => {
+      const isZip = file._isZip || file.name.toLowerCase().endsWith('.zip');
+      addFileToRoot(file, isZip);
     });
   }
+
+  state.files = [];
+  if (state.foldersRoot && state.foldersRoot.children.length > 0) {
+    state.files.push(state.foldersRoot);
+  }
+  if (state.zipsRoot && state.zipsRoot.children.length > 0) {
+    state.files.push(state.zipsRoot);
+  }
+
   renderFileTree();
 
   const exportBtn = document.getElementById('export-btn');
   if (exportBtn) {
-    if (state.files && state.files.length > 0) {
+    const hasContent = state.foldersRoot && state.foldersRoot.children.length > 0 ||
+      state.zipsRoot && state.zipsRoot.children.length > 0;
+    if (hasContent) {
       exportBtn.disabled = false;
       exportBtn.style.opacity = '1';
       exportBtn.style.cursor = 'pointer';
@@ -229,7 +270,6 @@ function renderFileTree() {
     return;
   }
 
-  // 使用文档片段提高性能
   const fragment = document.createDocumentFragment();
   state.files.forEach(node => {
     const nodeElement = document.createElement('div');
@@ -346,6 +386,51 @@ function renderTreeNode(node, level) {
   const isExpanded = state.expandedFolders.has(node.id);
   const isRootLevel = level === 0;
 
+  if (hasChildren && isExpanded) {
+    const childFolders = node.children.filter(child => child.type === 'folder');
+    const childFiles = node.children.filter(child => child.type === 'file');
+
+    return `
+      <div>
+        <div
+          class="tree-node ${isSelected ? 'selected' : ''} ${isRootLevel ? 'root-node' : ''}"
+          data-id="${node.id}"
+          data-type="${node.type}"
+          data-draggable="${!isFolder && !!node.url}"
+          ${!isFolder && !!node.url ? 'draggable="true"' : ''}
+        >
+          <div class="tree-node-content">
+            <span class="tree-icon">
+              ${isFolder ? '📁' : '📄'}
+            </span>
+            <span class="tree-name">${node.name}</span>
+          </div>
+          ${node.url ? `
+            <span class="tree-preview">
+              <img src="${node.url}" alt="${node.name}" />
+            </span>
+          ` : ''}
+          ${hasChildren ? `
+            <span class="tree-toggle ${isExpanded ? 'expanded' : ''}"></span>
+          ` : `
+            <span class="tree-toggle-placeholder"></span>
+          `}
+          ${isFolder && node.id !== 'root-folders' && node.id !== 'root-zips' ? `
+            <span class="tree-delete" data-id="${node.id}"></span>
+          ` : ''}
+        </div>
+        <div class="tree-children">
+          ${childFolders.map(child => renderTreeNode(child, level + 1)).join('')}
+          ${childFiles.length > 0 ? `
+            <div class="tree-children-scroll">
+              ${childFiles.map(child => renderTreeNode(child, level + 1)).join('')}
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
+
   return `
     <div>
       <div
@@ -371,13 +456,15 @@ function renderTreeNode(node, level) {
         ` : `
           <span class="tree-toggle-placeholder"></span>
         `}
-        ${isRootLevel && isFolder ? `
+        ${isFolder && node.id !== 'root-folders' && node.id !== 'root-zips' ? `
           <span class="tree-delete" data-id="${node.id}"></span>
         ` : ''}
       </div>
       ${hasChildren && isExpanded ? `
         <div class="tree-children">
-          ${node.children.map(child => renderTreeNode(child, level + 1)).join('')}
+          <div class="tree-children-scroll">
+            ${node.children.map(child => renderTreeNode(child, level + 1)).join('')}
+          </div>
         </div>
       ` : ''}
     </div>
@@ -499,11 +586,13 @@ async function handleDropZoneItems(items, isZipDropZone = false) {
         } else if (entry.isFile) {
           const filePromise = new Promise((resolve) => {
             entry.file(async (file) => {
-              if (isZipDropZone && file.name.toLowerCase().endsWith('.zip')) {
+              if (file.name.toLowerCase().endsWith('.zip')) {
                 const parsedFiles = await parseZipFile(file);
+                parsedFiles.forEach(f => f._isZip = true);
                 allParsedFiles.push(...parsedFiles);
               } else if (!isZipDropZone) {
                 const parsedFiles = await parseFiles([file]);
+                parsedFiles.forEach(f => f._isZip = false);
                 allParsedFiles.push(...parsedFiles);
               }
               resolve();
@@ -515,13 +604,13 @@ async function handleDropZoneItems(items, isZipDropZone = false) {
     } else if (item.kind === 'file') {
       const file = item.getAsFile();
       if (file) {
-        if (isZipDropZone) {
-          if (file.name.toLowerCase().endsWith('.zip')) {
-            const parsedFiles = await parseZipFile(file);
-            allParsedFiles.push(...parsedFiles);
-          }
-        } else {
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          const parsedFiles = await parseZipFile(file);
+          parsedFiles.forEach(f => f._isZip = true);
+          allParsedFiles.push(...parsedFiles);
+        } else if (!isZipDropZone) {
           const parsedFiles = await parseFiles([file]);
+          parsedFiles.forEach(f => f._isZip = false);
           allParsedFiles.push(...parsedFiles);
         }
       }
@@ -530,6 +619,7 @@ async function handleDropZoneItems(items, isZipDropZone = false) {
 
   for (const entry of directoryEntries) {
     const parsedFiles = await parseDirectoryEntry(entry);
+    parsedFiles.forEach(f => f._isZip = false);
     allParsedFiles.push(...parsedFiles);
   }
 
@@ -809,8 +899,23 @@ function handleTreeNodeClick(e) {
 
   if (type === 'folder') {
     const folderNode = findFileNodeById(state.files, id);
-    if (folderNode && state.files.some(f => f.id === id)) {
+
+    if (id === 'root-folders' || id === 'root-zips') {
       state.expandedFolders.clear();
+      state.expandedFolders.add(id);
+      renderFileTree();
+      return;
+    }
+
+    if (folderNode) {
+      state.expandedFolders.clear();
+
+      if (state.foldersRoot && state.foldersRoot.children.some(f => f.id === id)) {
+        state.expandedFolders.add('root-folders');
+      } else if (state.zipsRoot && state.zipsRoot.children.some(f => f.id === id)) {
+        state.expandedFolders.add('root-zips');
+      }
+
       state.expandedFolders.add(id);
       renderFileTree();
 
@@ -853,9 +958,28 @@ function handleTreeToggleClick(e) {
 function handleDeleteFolder(e) {
   e.stopPropagation();
   const folderId = e.currentTarget.dataset.id;
-  const folderToDelete = findFileNodeById(state.files, folderId);
 
-  state.files = state.files.filter(file => file.id !== folderId);
+  let folderToDelete = null;
+  let deletedFromRoot = null;
+
+  if (state.foldersRoot && state.foldersRoot.children) {
+    const index = state.foldersRoot.children.findIndex(f => f.id === folderId);
+    if (index !== -1) {
+      folderToDelete = state.foldersRoot.children[index];
+      state.foldersRoot.children.splice(index, 1);
+      deletedFromRoot = 'folders';
+    }
+  }
+
+  if (!folderToDelete && state.zipsRoot && state.zipsRoot.children) {
+    const index = state.zipsRoot.children.findIndex(f => f.id === folderId);
+    if (index !== -1) {
+      folderToDelete = state.zipsRoot.children[index];
+      state.zipsRoot.children.splice(index, 1);
+      deletedFromRoot = 'zips';
+    }
+  }
+
   state.expandedFolders.delete(folderId);
 
   if (folderToDelete) {
@@ -870,10 +994,23 @@ function handleDeleteFolder(e) {
     state.selectedFile = null;
   }
 
+  state.files = [];
+  if (state.foldersRoot && state.foldersRoot.children.length > 0) {
+    state.files.push(state.foldersRoot);
+  }
+  if (state.zipsRoot && state.zipsRoot.children.length > 0) {
+    state.files.push(state.zipsRoot);
+  }
+
   renderFileTree();
 
-  if (state.files.length === 0) {
+  const hasNoContent = (!state.foldersRoot || state.foldersRoot.children.length === 0) &&
+    (!state.zipsRoot || state.zipsRoot.children.length === 0);
+
+  if (hasNoContent) {
     state.importedResources = [];
+    state.foldersRoot = null;
+    state.zipsRoot = null;
     document.querySelectorAll('.grid-item').forEach(gridItem => {
       gridItem.style.backgroundImage = '';
       gridItem.dataset.url = '';
@@ -1400,30 +1537,6 @@ function collectUsedResources() {
   findFilesByUrl(state.files);
 
   return usedResources;
-}
-
-async function uploadToOSS(blob, fileName) {
-  const ossUrl = 'https://nati.oss-cn-hangzhou.aliyuncs.com/apk_logo_xct/server_resource_update/test/zhangyuan_test/theme_resources/';
-
-  const formData = new FormData();
-  formData.append('file', blob, fileName);
-
-  try {
-    const response = await fetch(ossUrl, {
-      method: 'POST',
-      body: formData,
-      mode: 'cors'
-    });
-
-    if (response.ok) {
-      return { success: true, message: '上传成功' };
-    } else {
-      const errorText = await response.text();
-      return { success: false, message: `上传失败: ${errorText}` };
-    }
-  } catch (error) {
-    return { success: false, message: `上传失败: ${error.message}` };
-  }
 }
 
 function showNotification(message, type = 'success') {
@@ -3141,49 +3254,10 @@ async function exportTheme(previewBlob, files, format = 'jpg') {
 
     const zipFileName = folderToExport ? `${folderToExport}.zip` : 'theme-resources.zip';
 
-    const uploadResult = await uploadToOSS(zipBlob, zipFileName);
-
-    if (uploadResult.success) {
-      showNotification('保存成功！主题资源已自动上传到服务器');
-    } else {
-      showNotification('自动上传失败，已为您下载本地文件', 'error');
-      downloadZip(zipBlob, zipFileName);
-    }
+    downloadZip(zipBlob, zipFileName);
   } catch (error) {
     console.error('Export failed:', error);
-    showNotification('导出失败，已为您下载本地文件', 'error');
-    const zip = new JSZip();
-
-    const folderToExport = state.currentFolderName || state.lastImportedFolderName;
-    const previewFileName = folderToExport ? `${folderToExport}.${format}` : `theme_preview.${format}`;
-    zip.file(previewFileName, previewBlob);
-
-    for (const resource of state.importedResources) {
-      if (resource.name === folderToExport) {
-        if (resource.type === 'zip') {
-          zip.file(resource.name, resource.file);
-        } else if (resource.type === 'folder') {
-          const folderName = resource.name;
-          resource.files.forEach(file => {
-            const path = file.webkitRelativePath || file.name;
-            const fullPath = path.startsWith(folderName) ? path : `${folderName}/${path}`;
-            zip.file(fullPath, file);
-          });
-        }
-        break;
-      }
-    }
-
-    if (state.importedResources.length === 0) {
-      const allFiles = collectAllFilesForExport(state.files);
-      allFiles.forEach(item => {
-        zip.file(item.path, item.file);
-      });
-    }
-
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const zipFileName = folderToExport ? `${folderToExport}.zip` : 'theme-resources.zip';
-    downloadZip(zipBlob, zipFileName);
+    showNotification('导出失败', 'error');
   }
 }
 
