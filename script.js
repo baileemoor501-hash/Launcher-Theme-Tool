@@ -123,20 +123,7 @@ function setFiles(newFiles) {
 
   renderFileTree();
 
-  const exportBtn = document.getElementById('export-btn');
-  if (exportBtn) {
-    const hasContent = state.foldersRoot && state.foldersRoot.children.length > 0 ||
-      state.zipsRoot && state.zipsRoot.children.length > 0;
-    if (hasContent) {
-      exportBtn.disabled = false;
-      exportBtn.style.opacity = '1';
-      exportBtn.style.cursor = 'pointer';
-    } else {
-      exportBtn.disabled = true;
-      exportBtn.style.opacity = '0.5';
-      exportBtn.style.cursor = 'not-allowed';
-    }
-  }
+  updateExportButtonState();
 }
 
 function setWallpaper(url) {
@@ -152,6 +139,26 @@ function setWallpaper(url) {
     } else {
       wallpaperElement.style.display = 'none';
     }
+  }
+  updateExportButtonState();
+}
+
+function updateExportButtonState() {
+  const exportBtn = document.getElementById('export-btn');
+  if (!exportBtn) return;
+
+  const hasWallpaper = state.wallpaper && state.wallpaper !== '';
+
+  const hasIcons = document.querySelectorAll('.grid-item-container.has-content').length > 0;
+
+  if (hasWallpaper && hasIcons) {
+    exportBtn.disabled = false;
+    exportBtn.style.opacity = '1';
+    exportBtn.style.cursor = 'pointer';
+  } else {
+    exportBtn.disabled = true;
+    exportBtn.style.opacity = '0.5';
+    exportBtn.style.cursor = 'not-allowed';
   }
 }
 
@@ -1136,6 +1143,7 @@ function handleDrop(e) {
 
       updateOverlappingIcons();
       addCustomContainerDragListeners();
+      updateExportButtonState();
     } else {
       const rect = targetContainer.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -1176,6 +1184,7 @@ function handleDrop(e) {
         container.classList.remove('deleted');
 
         addGridItemDragListeners();
+        updateExportButtonState();
       }
     }
   } catch (err) {
@@ -2042,6 +2051,7 @@ async function fillCustomContainers(previewFiles) {
 
   updateOverlappingIcons();
   addCustomContainerDragListeners();
+  updateExportButtonState();
 }
 
 function updateOverlappingIcons() {
@@ -2933,6 +2943,8 @@ function fillIconGrids(imageFiles) {
 
   // 为所有网格项添加拖拽事件监听器
   addGridItemDragListeners();
+
+  updateExportButtonState();
 }
 
 function addDeleteIcon(gridItem) {
@@ -2965,6 +2977,7 @@ function addDeleteIcon(gridItem) {
         resetWeatherWidget(container);
         showOverlappingRows(containerTop, 'custom-container-4');
         updateOverlappingIcons();
+        updateExportButtonState();
       } else {
         gridItem.innerHTML = '';
         gridItem.classList.remove('weather-widget');
@@ -2993,6 +3006,7 @@ function addDeleteIcon(gridItem) {
 
         showOverlappingRows(containerTop, 'custom-container-4');
         updateOverlappingIcons();
+        updateExportButtonState();
       }
     } else if (isCustomContainer2) {
       gridItem.innerHTML = '';
@@ -3015,6 +3029,7 @@ function addDeleteIcon(gridItem) {
 
       showOverlappingRows(containerTop, 'custom-container-2', containerLeft);
       updateOverlappingIcons();
+      updateExportButtonState();
     } else {
       if (hasContent) {
         gridItem.style.backgroundImage = '';
@@ -3031,6 +3046,7 @@ function addDeleteIcon(gridItem) {
         container.classList.add('deleted');
 
         addDeleteIcon(gridItem);
+        updateExportButtonState();
       } else {
         gridItem.style.border = 'none';
         gridItem.style.backgroundImage = '';
@@ -3513,13 +3529,8 @@ function init() {
     }
   });
 
-  // 初始禁用导出按钮
-  const exportBtn = document.getElementById('export-btn');
-  if (exportBtn) {
-    exportBtn.disabled = true;
-    exportBtn.style.opacity = '0.5';
-    exportBtn.style.cursor = 'not-allowed';
-  }
+  // 更新导出按钮状态（根据工作区内容）
+  updateExportButtonState();
 
   // 为grid-container添加拖放事件监听器（从文件树拖入）
   const gridContainer = document.getElementById('grid-container');
