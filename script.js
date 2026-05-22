@@ -2504,7 +2504,7 @@ function handleCustomContainerDrop(e) {
       targetGridItem.style.flexDirection = 'row';
       targetGridItem.style.alignItems = 'center';
       targetGridItem.style.justifyContent = 'space-between';
-      targetGridItem.style.color = 'white';
+      targetGridItem.style.color = state.settings.textColor;
       targetGridItem.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       targetGridItem.style.padding = '0 10px';
       targetGridItem.style.backgroundImage = '';
@@ -2697,7 +2697,7 @@ function handleCustomContainer4Drop(e) {
       targetGridItem.style.flexDirection = 'row';
       targetGridItem.style.alignItems = 'center';
       targetGridItem.style.justifyContent = 'space-between';
-      targetGridItem.style.color = 'white';
+      targetGridItem.style.color = state.settings.textColor;
       targetGridItem.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       targetGridItem.style.padding = '0 10px';
       targetGridItem.style.backgroundImage = '';
