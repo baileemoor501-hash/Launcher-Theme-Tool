@@ -1268,7 +1268,7 @@ async function handleExport() {
     const [width, height] = selectedResolution.split('x').map(Number);
 
     const mimeType = `image/${selectedFormat}`;
-    const previewBlob = await captureWorkspace(phoneScreen, mimeType, width, height);
+    const previewBlob = await captureWorkspace(phoneScreen, 'image/jpeg', width, height);
 
     const allFiles = [];
     collectFiles(state.files, allFiles);
@@ -1666,7 +1666,7 @@ function captureWorkspace(element, mimeType = 'image/jpeg', targetWidth = 1080, 
           item.style.borderRadius = originalItemBorderRadius[index];
         });
         ctx.drawImage(capturedCanvas, 0, 0, targetWidth, targetHeight);
-        canvas.toBlob(resolve, mimeType);
+        canvas.toBlob(resolve, 'image/jpeg', 0.6);
       }).catch(err => {
         console.error('html2canvas error:', err);
         if (gridOverlay) {
@@ -1725,7 +1725,7 @@ function captureWorkspace(element, mimeType = 'image/jpeg', targetWidth = 1080, 
             item.style.borderRadius = originalItemBorderRadius[index];
           });
 
-          canvas.toBlob(resolve, 'image/png');
+          canvas.toBlob(resolve, 'image/jpeg', 0.6);
         }, 100);
       } catch (err) {
         console.error('Capture error:', err);
