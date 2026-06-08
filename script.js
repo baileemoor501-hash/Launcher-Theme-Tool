@@ -1,6 +1,310 @@
 // 主题预览图生成工具 - 重构版
 // 纯 HTML、CSS 和 JavaScript 实现
 
+// 模块: API配置
+const API_CONFIG = {
+  baseUrl: 'https://launcher-theme-tool.appser.top',
+  endpoints: {
+    listThemes: '/api/bundles?type=theme',
+    createTheme: '/api/bundles',
+    getTheme: '/api/bundles/{themeId}',
+    uploadFile: '/api/bundles/{themeId}/files',
+    confirmUpload: '/api/bundles/{themeId}/confirm',
+    deleteTheme: '/api/bundles/{themeId}',
+  }
+};
+
+async function apiRequest(url, options = {}) {
+  const defaultOptions = {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  };
+
+  const mergedOptions = { ...defaultOptions, ...options };
+
+  if (mergedOptions.body && typeof mergedOptions.body !== 'string') {
+    mergedOptions.body = JSON.stringify(mergedOptions.body);
+  }
+
+  try {
+    const response = await fetch(url, mergedOptions);
+    const text = await response.text();
+
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = {};
+    }
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('API request failed:', error);
+    throw error;
+  }
+}
+
+async function apiUploadFile(url, file, filename) {
+  const formData = new FormData();
+  formData.append('file', file, filename);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const text = await response.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = {};
+    }
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+
+    return data;
+  } catch (error) {
+    console.error('File upload failed:', error);
+    throw error;
+  }
+}
+
+function buildUrl(endpoint, params = {}) {
+  let url = API_CONFIG.baseUrl + endpoint;
+  Object.keys(params).forEach(key => {
+    url = url.replace(`{${key}}`, params[key]);
+  });
+  return url;
+}
+
+// 模块: 主题管理API
+async function createTheme(name, type = 'theme') {
+  const url = buildUrl(API_CONFIG.endpoints.createTheme);
+  const data = await apiRequest(url, {
+    method: 'POST',
+    body: { name, type },
+  });
+  return data;
+}
+
+async function listThemes() {
+  const url = buildUrl(API_CONFIG.endpoints.listThemes);
+  const data = await apiRequest(url, { method: 'GET' });
+  return data;
+}
+
+async function getTheme(themeId) {
+  const url = buildUrl(API_CONFIG.endpoints.getTheme, { themeId });
+  const data = await apiRequest(url, { method: 'GET' });
+  return data;
+}
+
+async function uploadThemeFile(themeId, file, filename) {
+  const url = buildUrl(API_CONFIG.endpoints.uploadFile, { themeId }) + `?filename=${encodeURIComponent(filename)}`;
+  const data = await apiUploadFile(url, file, filename);
+  return data;
+}
+
+async function confirmThemeUpload(themeId) {
+  const url = buildUrl(API_CONFIG.endpoints.confirmUpload, { themeId });
+  const data = await apiRequest(url, { method: 'POST' });
+  return data;
+}
+
+async function deleteTheme(themeId) {
+  const url = buildUrl(API_CONFIG.endpoints.deleteTheme, { themeId });
+  const data = await apiRequest(url, { method: 'DELETE' });
+  return data;
+}
+
+// 模块: 文件夹同步API
+async function saveFolderToAPI(folderNode) {
+  if (!folderNode || folderNode.type !== 'folder') {
+    throw new Error('Invalid folder node');
+  }
+
+  try {
+    const createResult = await createTheme(folderNode.name, 'theme');
+    const themeId = createResult.id;
+    folderNode.apiId = themeId;
+    console.log('Created theme with ID:', themeId);
+
+    const filesToUpload = [];
+    collectFilesFromNode(folderNode, filesToUpload);
+    console.log('Files to upload:', filesToUpload.map(f => f.name));
+
+    if (filesToUpload.length === 0) {
+      showNotification('没有找到可上传的文件', 'warning');
+      return { success: false, error: new Error('No files to upload') };
+    }
+
+    for (const fileItem of filesToUpload) {
+      console.log('Uploading file:', fileItem.name);
+      await uploadThemeFile(themeId, fileItem.file, fileItem.name);
+      console.log('Uploaded:', fileItem.name);
+    }
+
+    await confirmThemeUpload(themeId);
+    console.log('Confirmed upload for theme:', themeId);
+
+    showNotification(`文件夹 "${folderNode.name}" 已保存到服务器`, 'success');
+    return { success: true, themeId, folderNode };
+  } catch (error) {
+    console.error('Failed to save folder to API:', error);
+    showNotification(`保存失败: ${error.message}`, 'error');
+    return { success: false, error };
+  }
+}
+
+function collectFilesFromNode(node, files, parentPath = '', isRoot = true) {
+  if (node.type === 'file' && node.file) {
+    const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+    files.push({
+      name: fullPath,
+      file: node.file,
+    });
+  } else if (node.type === 'folder' && node.children) {
+    const newPath = isRoot ? '' : (parentPath ? `${parentPath}/${node.name}` : node.name);
+    node.children.forEach(child => collectFilesFromNode(child, files, newPath, false));
+  }
+}
+
+async function loadThemesFromAPI() {
+  try {
+    const result = await listThemes();
+    const themes = result.data || [];
+
+    const folderNodes = [];
+    for (const theme of themes) {
+      const folderNode = {
+        id: `api-folder-${theme.id}`,
+        apiId: theme.id,
+        name: theme.name,
+        type: 'folder',
+        children: [],
+        r2Prefix: theme.r2Prefix,
+        itemCount: theme.itemCount,
+        createdAt: theme.createdAt,
+      };
+      folderNodes.push(folderNode);
+    }
+
+    return { success: true, themes: folderNodes };
+  } catch (error) {
+    console.error('Failed to load themes from API:', error);
+    return { success: false, error };
+  }
+}
+
+async function loadThemeFilesFromAPI(themeId) {
+  try {
+    const result = await getTheme(themeId);
+    console.log('Loaded theme from API:', result);
+    console.log('Theme r2Prefix:', result.r2Prefix);
+
+    const folderNode = {
+      id: `api-folder-${themeId}`,
+      apiId: themeId,
+      name: result.name,
+      type: 'folder',
+      children: [],
+      r2Prefix: result.r2Prefix,
+      itemCount: result.itemCount,
+      createdAt: result.createdAt,
+    };
+
+    console.log('Files from API:', result.files);
+    if (result.files && result.files.length > 0) {
+      console.log('Found', result.files.length, 'files');
+      for (const fileInfo of result.files) {
+
+        const key = fileInfo.key || fileInfo.filename || fileInfo.path || fileInfo.name;
+        if (!key) {
+          console.log('Skipping file without key:', fileInfo);
+          continue;
+        }
+
+        const fileName = key.split('/').pop();
+        const fileUrl = fileInfo.url || fileInfo.publicUrl || '';
+        console.log('Final URL for file:', fileName, '->', fileUrl);
+
+        let finalUrl = '';
+        let r2Url = '';
+
+        if (fileUrl) {
+          if (fileUrl.startsWith('http')) {
+            finalUrl = fileUrl;
+          } else {
+            finalUrl = API_CONFIG.baseUrl + (fileUrl.startsWith('/') ? '' : '/') + fileUrl;
+          }
+        } else if (key) {
+          const cleanKey = key.startsWith('themes/') ? key.split('/').slice(2).join('/') : key;
+          finalUrl = `${API_CONFIG.baseUrl}/api/bundles/${themeId}/files/${encodeURIComponent(cleanKey)}`;
+        }
+
+        if (result.r2Prefix && key) {
+          const cleanKey = key.startsWith('themes/') ? key.split('/').slice(2).join('/') : key;
+          r2Url = `${API_CONFIG.baseUrl}/${result.r2Prefix}/${encodeURIComponent(cleanKey)}`;
+        }
+
+        console.log('Final URL constructed:', finalUrl);
+        console.log('R2 URL constructed:', r2Url);
+
+        const fileNode = {
+          id: `api-file-${key}`,
+          name: fileName,
+          type: 'file',
+          url: finalUrl,
+          r2Url: r2Url,
+          key: key,
+          originalUrl: finalUrl,
+        };
+        folderNode.children.push(fileNode);
+      }
+      console.log('Processed', folderNode.children.length, 'files');
+    } else {
+      console.log('No files found in theme');
+    }
+
+    return { success: true, folderNode };
+  } catch (error) {
+    console.error('Failed to load theme files from API:', error);
+    return { success: false, error };
+  }
+}
+
+async function loadThemesFromAPIOnStartup() {
+  try {
+    const result = await loadThemesFromAPI();
+    if (result.success && result.themes && result.themes.length > 0) {
+      ensureRootFolders();
+      result.themes.forEach(theme => {
+        state.foldersRoot.children.push(theme);
+      });
+      state.files = [];
+      if (state.foldersRoot && state.foldersRoot.children.length > 0) {
+        state.files.push(state.foldersRoot);
+      }
+      if (state.zipsRoot && state.zipsRoot.children.length > 0) {
+        state.files.push(state.zipsRoot);
+      }
+      renderFileTree();
+      showNotification(`已从服务器加载 ${result.themes.length} 个主题`, 'success');
+    }
+  } catch (error) {
+    console.warn('Failed to load themes from API on startup:', error);
+  }
+}
+
 // 模块: 常量定义
 const GRID_CONFIG = {
   rows: 6,
@@ -362,13 +666,13 @@ function renderGridOverlay() {
 
   // 创建7根横线
   const linePositions = [
-    50,      // 第1根
-    147.8,     // 第2根
-    245.6,     // 第3根
-    343.4,     // 第4根
-    441.2,     // 第5根
-    539,     // 第6根
-    670      // 第7根（dock栏）
+    80,      // 第1根
+    180,     // 第2根
+    280,     // 第3根
+    380,     // 第4根
+    480,     // 第5根
+    580,     // 第6根
+    710      // 第7根（dock栏）
   ];
 
   for (let i = 0; i < linePositions.length; i++) {
@@ -492,13 +796,12 @@ function updateSettingsUI() {
 
   // 更新所有icon-label的文字颜色和显示状态
   document.querySelectorAll('.icon-label').forEach(label => {
-    label.style.color = state.settings.textColor;
     // 检查是否是dock栏的icon-label（dock栏的始终隐藏）
-    const isDockItem = label.closest('.grid-item-container[style*="top: 96.2%"]');
+    const isDockItem = label.closest('.grid-item-container.dock-container');
     // 检查是否是初始隐藏的容器中的icon-label
     const isInitiallyHidden = label.closest('.grid-item-container.initially-hidden');
     if (!isDockItem && !isInitiallyHidden) {
-      label.style.display = state.settings.showText ? '' : 'none';
+      label.style.color = state.settings.showText ? state.settings.textColor : 'transparent';
       label.style.visibility = state.settings.showText ? 'visible' : 'hidden';
     }
   });
@@ -668,8 +971,6 @@ async function handleDropZoneItems(items, isZipDropZone = false) {
     const iconFiles = collectIconFiles([lastFolder]);
     fillIconGrids(iconFiles);
   }
-
-  updateCache();
 }
 
 async function parseDirectoryEntry(entry) {
@@ -822,7 +1123,6 @@ async function handleDroppedZipFile(zipFile) {
     const iconFiles = collectIconFiles(parsedFiles);
     fillIconGrids(iconFiles);
 
-    updateCache();
   } catch (error) {
     console.error('Error handling zip file:', error);
     showNotification('导入失败，请重试', 'error');
@@ -893,7 +1193,6 @@ async function handleDroppedFiles(files) {
     const iconFiles = collectIconFiles(parsedFiles);
     fillIconGrids(iconFiles);
 
-    updateCache();
   } catch (error) {
     console.error('Error handling dropped files:', error);
     showNotification('导入失败，请重试', 'error');
@@ -901,7 +1200,7 @@ async function handleDroppedFiles(files) {
 }
 
 // 模块: 事件处理
-function handleTreeNodeClick(e) {
+async function handleTreeNodeClick(e) {
   const node = e.currentTarget;
   const id = node.dataset.id;
   const type = node.dataset.type;
@@ -909,7 +1208,7 @@ function handleTreeNodeClick(e) {
   setSelectedFile(id);
 
   if (type === 'folder') {
-    const folderNode = findFileNodeById(state.files, id);
+    let folderNode = findFileNodeById(state.files, id);
 
     if (id === 'root-folders' || id === 'root-zips') {
       state.expandedFolders.clear();
@@ -919,6 +1218,21 @@ function handleTreeNodeClick(e) {
     }
 
     if (folderNode) {
+      console.log('Processing folder:', folderNode.name, 'apiId:', folderNode.apiId, 'has children:', folderNode.children && folderNode.children.length > 0);
+      if (folderNode.apiId && !folderNode.children.length) {
+        const result = await loadThemeFilesFromAPI(folderNode.apiId);
+
+        if (result.success) {
+          const index = state.foldersRoot.children.findIndex(f => f.id === folderNode.id);
+          if (index !== -1) {
+            state.foldersRoot.children[index] = result.folderNode;
+            folderNode = result.folderNode;
+          }
+        } else {
+          console.error('Failed to load theme files from API:', result.error);
+        }
+      }
+
       state.expandedFolders.clear();
 
       if (state.foldersRoot && state.foldersRoot.children.some(f => f.id === id)) {
@@ -932,17 +1246,43 @@ function handleTreeNodeClick(e) {
 
       state.currentFolderName = folderNode.name;
 
-      const wallpaperInfo = findWallpaper([folderNode]);
+      const allFileNodes = [];
+      function collectFileNodes(node) {
+        if (node.type === 'file') {
+          allFileNodes.push(node);
+        }
+        if (node.children) {
+          node.children.forEach(collectFileNodes);
+        }
+      }
+      collectFileNodes(folderNode);
+
+      for (const fileNode of allFileNodes) {
+        if (fileNode.type === 'file' && fileNode.url && isImageFile(fileNode.name)) {
+          const blobUrl = await fetchImageWithCors(fileNode.url);
+          if (blobUrl) {
+            fileNode.url = blobUrl;
+            fileNode.blobUrl = blobUrl;
+          } else {
+            console.warn('Failed to fetch image, using original URL:', fileNode.name);
+          }
+        }
+      }
+
+      renderFileTree();
+
+      const wallpaperInfo = findWallpaper(allFileNodes);
       if (wallpaperInfo && wallpaperInfo.url) {
         setWallpaper(wallpaperInfo.url);
       }
 
-      collectPreviewFilesWithDimensions([folderNode]).then(previewFiles => {
-        fillCustomContainers(previewFiles);
-      });
+      const previewFiles = await collectPreviewFilesWithDimensions(allFileNodes);
+      fillCustomContainers(previewFiles);
 
-      const iconFiles = collectIconFiles([folderNode]);
+      const iconFiles = collectIconFiles(allFileNodes);
+
       fillIconGrids(iconFiles);
+      console.log('Completed loading theme:', folderNode.name);
     }
   }
 }
@@ -966,7 +1306,7 @@ function handleTreeToggleClick(e) {
   }
 }
 
-function handleDeleteFolder(e) {
+async function handleDeleteFolder(e) {
   e.stopPropagation();
   const folderId = e.currentTarget.dataset.id;
 
@@ -988,6 +1328,15 @@ function handleDeleteFolder(e) {
       folderToDelete = state.zipsRoot.children[index];
       state.zipsRoot.children.splice(index, 1);
       deletedFromRoot = 'zips';
+    }
+  }
+
+  if (folderToDelete && folderToDelete.apiId) {
+    try {
+      await deleteTheme(folderToDelete.apiId);
+      showNotification('服务器上的文件夹已删除', 'success');
+    } catch (error) {
+      console.warn('Failed to delete from API:', error);
     }
   }
 
@@ -1023,7 +1372,6 @@ function handleDeleteFolder(e) {
     state.foldersRoot = null;
     state.zipsRoot = null;
     state.wallpaper = null;
-    clearCache();
 
     document.querySelectorAll('.grid-item').forEach(gridItem => {
       gridItem.style.backgroundImage = '';
@@ -1049,7 +1397,6 @@ function handleDeleteFolder(e) {
 
     showNotification('已清除所有导入的内容', 'success');
   } else {
-    updateCache();
     showNotification('文件夹已删除', 'success');
   }
 }
@@ -1609,16 +1956,20 @@ function captureWorkspace(element, mimeType = 'image/jpeg', targetWidth = 1080, 
     element.style.borderRadius = '0';
 
     const wallpaper = element.querySelector('.wallpaper');
+    const originalWallpaperStyle = {};
     if (wallpaper) {
+      originalWallpaperStyle.borderRadius = wallpaper.style.borderRadius;
       wallpaper.style.borderRadius = '0';
     }
 
     const phoneContent = element.querySelector('.phone-content');
+    const originalPhoneContentStyle = {};
     if (phoneContent) {
-      phoneContent.style.borderRadius = '0';
+      originalPhoneContentStyle.display = phoneContent.style.display;
+      phoneContent.style.display = 'none';
     }
 
-    const normalContainers = element.querySelectorAll('.grid-item-container:not(.custom-container-4)');
+    const normalContainers = element.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2)');
     const hiddenContainers = [];
     normalContainers.forEach(container => {
       const gridItem = container.querySelector('.grid-item');
@@ -1640,23 +1991,26 @@ function captureWorkspace(element, mimeType = 'image/jpeg', targetWidth = 1080, 
     });
 
     if (typeof html2canvas !== 'undefined') {
+      const scale = targetWidth / element.offsetWidth;
+
       html2canvas(element, {
         width: element.offsetWidth,
         height: element.offsetHeight,
-        scale: targetWidth / element.offsetWidth,
+        scale: scale,
         useCORS: true,
         logging: false,
-        backgroundColor: null
+        backgroundColor: null,
+        allowTaint: true
       }).then(capturedCanvas => {
         if (gridOverlay) {
           gridOverlay.style.display = gridOverlayVisible;
         }
         element.style.borderRadius = originalBorderRadius;
         if (wallpaper) {
-          wallpaper.style.borderRadius = '';
+          wallpaper.style.borderRadius = originalWallpaperStyle.borderRadius;
         }
         if (phoneContent) {
-          phoneContent.style.borderRadius = '';
+          phoneContent.style.display = originalPhoneContentStyle.display;
         }
         hiddenContainers.forEach(container => {
           container.style.display = '';
@@ -1674,10 +2028,10 @@ function captureWorkspace(element, mimeType = 'image/jpeg', targetWidth = 1080, 
         }
         element.style.borderRadius = originalBorderRadius;
         if (wallpaper) {
-          wallpaper.style.borderRadius = '';
+          wallpaper.style.borderRadius = originalWallpaperStyle.borderRadius;
         }
         if (phoneContent) {
-          phoneContent.style.borderRadius = '';
+          phoneContent.style.display = originalPhoneContentStyle.display;
         }
         hiddenContainers.forEach(container => {
           container.style.display = '';
@@ -1712,10 +2066,15 @@ function captureWorkspace(element, mimeType = 'image/jpeg', targetWidth = 1080, 
           }
           element.style.borderRadius = originalBorderRadius;
           if (wallpaper) {
-            wallpaper.style.borderRadius = '';
+            wallpaper.style.borderRadius = originalWallpaperStyle.borderRadius;
+            wallpaper.style.width = originalWallpaperStyle.width;
+            wallpaper.style.height = originalWallpaperStyle.height;
           }
           if (phoneContent) {
-            phoneContent.style.borderRadius = '';
+            phoneContent.style.borderRadius = originalPhoneContentStyle.borderRadius;
+            phoneContent.style.width = originalPhoneContentStyle.width;
+            phoneContent.style.height = originalPhoneContentStyle.height;
+            phoneContent.style.bottom = originalPhoneContentStyle.bottom;
           }
           hiddenContainers.forEach(container => {
             container.style.display = '';
@@ -1734,10 +2093,10 @@ function captureWorkspace(element, mimeType = 'image/jpeg', targetWidth = 1080, 
         }
         element.style.borderRadius = originalBorderRadius;
         if (wallpaper) {
-          wallpaper.style.borderRadius = '';
+          wallpaper.style.borderRadius = originalWallpaperStyle.borderRadius;
         }
         if (phoneContent) {
-          phoneContent.style.borderRadius = '';
+          phoneContent.style.display = originalPhoneContentStyle.display;
         }
         hiddenContainers.forEach(container => {
           container.style.display = '';
@@ -1812,9 +2171,137 @@ function collectIconFiles(nodes) {
   return iconFiles;
 }
 
+async function fetchImageAsBlobUrl(url) {
+  try {
+    console.log('Fetching image:', url);
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'same-origin'
+    });
+
+    console.log('Response status:', response.status, response.statusText);
+
+    if (!response.ok) {
+      console.warn('Image fetch failed:', url, response.status, response.statusText);
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type');
+    console.log('Content-Type:', contentType);
+
+    const blob = await response.blob();
+    console.log('Blob size:', blob.size, 'bytes');
+
+    const blobUrl = URL.createObjectURL(blob);
+    console.log('Created blob URL:', blobUrl);
+
+    return blobUrl;
+  } catch (error) {
+    console.warn('Image fetch error:', url, error.message);
+    return null;
+  }
+}
+
+async function prefetchImagesForDisplay(fileNodes) {
+  const promises = fileNodes.map(async (fileNode) => {
+    if (fileNode.url && isImageFile(fileNode.name)) {
+      console.log('Processing file:', fileNode.name, 'with URL:', fileNode.url);
+
+      if (!fileNode.url || fileNode.url.trim() === '') {
+        console.error('File has empty URL:', fileNode.name);
+        return fileNode;
+      }
+
+      let blobUrl = null;
+
+      if (fileNode.r2Url) {
+        console.log('Trying R2 URL:', fileNode.r2Url);
+        blobUrl = await fetchImageAsBlobUrl(fileNode.r2Url);
+      }
+
+      if (!blobUrl && fileNode.url) {
+        console.log('Trying regular URL:', fileNode.url);
+        blobUrl = await fetchImageAsBlobUrl(fileNode.url);
+      }
+
+      if (blobUrl) {
+        fileNode.blobUrl = blobUrl;
+        fileNode.url = blobUrl;
+        console.log('Successfully created blob URL for:', fileNode.name);
+      } else {
+        console.warn('Failed to prefetch image, will use original URL:', fileNode.url);
+        if (!fileNode.url.startsWith('http')) {
+          console.error('URL is not valid:', fileNode.url);
+        }
+      }
+    } else {
+      console.log('Skipping file (not image or no URL):', fileNode.name, 'hasUrl:', !!fileNode.url, 'isImage:', isImageFile(fileNode.name));
+    }
+    return fileNode;
+  });
+
+  await Promise.all(promises);
+  return fileNodes;
+}
+
+async function testImageUrl(fileName, url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      console.log('Image loaded successfully:', fileName, '-', url);
+      resolve(true);
+    };
+    img.onerror = (error) => {
+      console.error('Image load failed:', fileName, '-', url, error.message);
+      resolve(false);
+    };
+    img.src = url;
+  });
+}
+
+async function fetchImageWithCors(url) {
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-cache'
+    });
+
+    if (!response.ok) {
+      console.error('Fetch failed:', url, response.status);
+      return null;
+    }
+
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    return blobUrl;
+  } catch (error) {
+    console.error('Fetch error:', url, error.message);
+    return null;
+  }
+}
+
+async function prefetchImagesWithFallback(fileNodes) {
+  await prefetchImagesForDisplay(fileNodes);
+
+  for (const fileNode of fileNodes) {
+    if (fileNode.type === 'file' && isImageFile(fileNode.name)) {
+      if (!fileNode.url || !fileNode.url.startsWith('blob:') && !fileNode.url.startsWith('http')) {
+        console.warn('File URL is invalid, trying to reconstruct:', fileNode.name);
+        if (fileNode.originalUrl && fileNode.originalUrl.startsWith('http')) {
+          fileNode.url = fileNode.originalUrl;
+          console.log('Reverted to original URL:', fileNode.url);
+        }
+      }
+    }
+  }
+
+  return fileNodes;
+}
+
 function resetWeatherWidget(container) {
   const weatherContainer = container || document.querySelector(
-    '.grid-item-container.custom-container-4[style*="top: 18.7%"]'
+    '.grid-item-container.custom-container-4[style*="top: 21.5%"]'
   );
   if (!weatherContainer) return;
 
@@ -1892,11 +2379,11 @@ function resetWeatherWidget(container) {
 
 async function fillCustomContainers(previewFiles) {
   const weatherContainer = document.querySelector(
-    '.grid-item-container.custom-container-4[style*="top: 18.7%"]'
+    '.grid-item-container.custom-container-4[style*="top: 21.5%"]'
   );
 
   const otherContainers4 = document.querySelectorAll(
-    '.grid-item-container.custom-container-4:not(.initially-hidden):not([style*="top: 18.7%"])'
+    '.grid-item-container.custom-container-4:not(.initially-hidden):not([style*="top: 21.5%"])'
   );
 
   const containers2 = document.querySelectorAll(
@@ -2079,8 +2566,8 @@ function updateOverlappingIcons() {
     if (isContainer4) {
       const overlappedRows = OVERLAP_MAP_4[customContainerTop] || [];
       normalContainers.forEach(normalContainer => {
+        const isDockItem = normalContainer.classList.contains('dock-container');
         const styleTop = normalContainer.style.top;
-        const isDockItem = styleTop && styleTop.includes('96');
 
         if (!isDockItem && overlappedRows.includes(styleTop)) {
           normalContainer.classList.add('overlapped');
@@ -2089,9 +2576,9 @@ function updateOverlappingIcons() {
     } else {
       const overlappedPositions = (OVERLAP_MAP_2[customContainerTop] && OVERLAP_MAP_2[customContainerTop][customContainerLeft]) || [];
       normalContainers.forEach(normalContainer => {
+        const isDockItem = normalContainer.classList.contains('dock-container');
         const styleTop = normalContainer.style.top;
         const styleLeft = normalContainer.style.left;
-        const isDockItem = styleTop && styleTop.includes('96');
 
         if (!isDockItem) {
           const matches = overlappedPositions.some(pos => pos.top === styleTop && pos.left === styleLeft);
@@ -2114,112 +2601,112 @@ function isOverlapping(rect1, rect2) {
 }
 
 const OVERLAP_MAP_4 = {
-  '4.6%': ['8.4%', '22.5%'],
-  '18.7%': ['22.5%', '36.5%'],
-  '32.8%': ['36.5%', '50.8%'],
-  '47.1%': ['50.8%', '64.9%'],
-  '61.4%': ['64.9%', '79.2%'],
+  '8.5%': ['11.5%', '24.5%'],
+  '21.5%': ['24.5%', '37.5%'],
+  '34.5%': ['37.5%', '50.5%'],
+  '47.5%': ['50.5%', '63.5%'],
+  '60.5%': ['63.5%', '76.5%'],
 };
 
 const OVERLAP_MAP_2 = {
-  '4.6%': {
+  '8.5%': {
     '8%': [
-      { top: '8.4%', left: '16.2%' },
-      { top: '8.4%', left: '38.8%' },
-      { top: '22.5%', left: '16.2%' },
-      { top: '22.5%', left: '38.8%' },
+      { top: '11.5%', left: '16.2%' },
+      { top: '11.5%', left: '38.8%' },
+      { top: '24.5%', left: '16.2%' },
+      { top: '24.5%', left: '38.8%' },
     ],
     '30.4%': [
-      { top: '8.4%', left: '38.8%' },
-      { top: '8.4%', left: '61.4%' },
-      { top: '22.5%', left: '38.8%' },
-      { top: '22.5%', left: '61.4%' },
+      { top: '11.5%', left: '38.8%' },
+      { top: '11.5%', left: '61.4%' },
+      { top: '24.5%', left: '38.8%' },
+      { top: '24.5%', left: '61.4%' },
     ],
     '52.8%': [
-      { top: '8.4%', left: '61.4%' },
-      { top: '8.4%', left: '83.9%' },
-      { top: '22.5%', left: '61.4%' },
-      { top: '22.5%', left: '83.9%' },
+      { top: '11.5%', left: '61.4%' },
+      { top: '11.5%', left: '83.9%' },
+      { top: '24.5%', left: '61.4%' },
+      { top: '24.5%', left: '83.9%' },
     ],
   },
-  '18.7%': {
+  '21.5%': {
     '8%': [
-      { top: '22.5%', left: '16.2%' },
-      { top: '22.5%', left: '38.8%' },
-      { top: '36.5%', left: '16.2%' },
-      { top: '36.5%', left: '38.8%' },
+      { top: '24.5%', left: '16.2%' },
+      { top: '24.5%', left: '38.8%' },
+      { top: '37.5%', left: '16.2%' },
+      { top: '37.5%', left: '38.8%' },
     ],
     '30.4%': [
-      { top: '22.5%', left: '38.8%' },
-      { top: '22.5%', left: '61.4%' },
-      { top: '36.5%', left: '38.8%' },
-      { top: '36.5%', left: '61.4%' },
+      { top: '24.5%', left: '38.8%' },
+      { top: '24.5%', left: '61.4%' },
+      { top: '37.5%', left: '38.8%' },
+      { top: '37.5%', left: '61.4%' },
     ],
     '52.8%': [
-      { top: '22.5%', left: '61.4%' },
-      { top: '22.5%', left: '83.9%' },
-      { top: '36.5%', left: '61.4%' },
-      { top: '36.5%', left: '83.9%' },
+      { top: '24.5%', left: '61.4%' },
+      { top: '24.5%', left: '83.9%' },
+      { top: '37.5%', left: '61.4%' },
+      { top: '37.5%', left: '83.9%' },
     ],
   },
-  '32.8%': {
+  '34.5%': {
     '8%': [
-      { top: '36.5%', left: '16.2%' },
-      { top: '36.5%', left: '38.8%' },
-      { top: '50.8%', left: '16.2%' },
-      { top: '50.8%', left: '38.8%' },
+      { top: '37.5%', left: '16.2%' },
+      { top: '37.5%', left: '38.8%' },
+      { top: '50.5%', left: '16.2%' },
+      { top: '50.5%', left: '38.8%' },
     ],
     '30.4%': [
-      { top: '36.5%', left: '38.8%' },
-      { top: '36.5%', left: '61.4%' },
-      { top: '50.8%', left: '38.8%' },
-      { top: '50.8%', left: '61.4%' },
+      { top: '37.5%', left: '38.8%' },
+      { top: '37.5%', left: '61.4%' },
+      { top: '50.5%', left: '38.8%' },
+      { top: '50.5%', left: '61.4%' },
     ],
     '52.8%': [
-      { top: '36.5%', left: '61.4%' },
-      { top: '36.5%', left: '83.9%' },
-      { top: '50.8%', left: '61.4%' },
-      { top: '50.8%', left: '83.9%' },
+      { top: '37.5%', left: '61.4%' },
+      { top: '37.5%', left: '83.9%' },
+      { top: '50.5%', left: '61.4%' },
+      { top: '50.5%', left: '83.9%' },
     ],
   },
-  '47.1%': {
+  '47.5%': {
     '8%': [
-      { top: '50.8%', left: '16.2%' },
-      { top: '50.8%', left: '38.8%' },
-      { top: '64.9%', left: '16.2%' },
-      { top: '64.9%', left: '38.8%' },
+      { top: '50.5%', left: '16.2%' },
+      { top: '50.5%', left: '38.8%' },
+      { top: '63.5%', left: '16.2%' },
+      { top: '63.5%', left: '38.8%' },
     ],
     '30.4%': [
-      { top: '50.8%', left: '38.8%' },
-      { top: '50.8%', left: '61.4%' },
-      { top: '64.9%', left: '38.8%' },
-      { top: '64.9%', left: '61.4%' },
+      { top: '50.5%', left: '38.8%' },
+      { top: '50.5%', left: '61.4%' },
+      { top: '63.5%', left: '38.8%' },
+      { top: '63.5%', left: '61.4%' },
     ],
     '52.8%': [
-      { top: '50.8%', left: '61.4%' },
-      { top: '50.8%', left: '83.9%' },
-      { top: '64.9%', left: '61.4%' },
-      { top: '64.9%', left: '83.9%' },
+      { top: '50.5%', left: '61.4%' },
+      { top: '50.5%', left: '83.9%' },
+      { top: '63.5%', left: '61.4%' },
+      { top: '63.5%', left: '83.9%' },
     ],
   },
-  '61.4%': {
+  '60.5%': {
     '8%': [
-      { top: '64.9%', left: '16.2%' },
-      { top: '64.9%', left: '38.8%' },
-      { top: '79.2%', left: '16.2%' },
-      { top: '79.2%', left: '38.8%' },
+      { top: '63.5%', left: '16.2%' },
+      { top: '63.5%', left: '38.8%' },
+      { top: '76.5%', left: '16.2%' },
+      { top: '76.5%', left: '38.8%' },
     ],
     '30.4%': [
-      { top: '64.9%', left: '38.8%' },
-      { top: '64.9%', left: '61.4%' },
-      { top: '79.2%', left: '38.8%' },
-      { top: '79.2%', left: '61.4%' },
+      { top: '63.5%', left: '38.8%' },
+      { top: '63.5%', left: '61.4%' },
+      { top: '76.5%', left: '38.8%' },
+      { top: '76.5%', left: '61.4%' },
     ],
     '52.8%': [
-      { top: '64.9%', left: '61.4%' },
-      { top: '64.9%', left: '83.9%' },
-      { top: '79.2%', left: '61.4%' },
-      { top: '79.2%', left: '83.9%' },
+      { top: '63.5%', left: '61.4%' },
+      { top: '63.5%', left: '83.9%' },
+      { top: '76.5%', left: '61.4%' },
+      { top: '76.5%', left: '83.9%' },
     ],
   },
 };
@@ -2893,7 +3380,6 @@ function handleCustomContainer2Drop(e) {
 function fillIconGrids(imageFiles) {
   const allGridContainers = document.querySelectorAll('.grid-item-container:not(.custom-container-4):not(.custom-container-2):not(.initially-hidden)');
 
-  // 为所有容器设置data-index
   allGridContainers.forEach((container, index) => {
     container.dataset.index = index.toString();
   });
@@ -2902,12 +3388,14 @@ function fillIconGrids(imageFiles) {
 
   let fileIndex = 0;
 
-  const skipPositions = ['8.4%', '22.5%', '36.5%', '50.8%'];
+  const skipPositions = ['11.5%', '24.5%', '37.5%', '50.5%'];
+
+
 
   // 填充网格
   gridContainers.forEach(container => {
     const styleTop = container.style.top;
-    const isDockItem = styleTop && styleTop.includes('96');
+    const isDockItem = container.classList.contains('dock-container');
 
     if (skipPositions.includes(styleTop) && !isDockItem) {
       return;
@@ -3247,6 +3735,28 @@ function collectAllFilesForExport(nodes, parentPath = '') {
   return allFiles;
 }
 
+async function handleSaveToServer() {
+  if (!state.currentFolderName) {
+    showNotification('请先导入文件夹', 'error');
+    return;
+  }
+
+  const folderNode = findFileNodeById(state.files, state.selectedFile);
+  if (!folderNode || folderNode.type !== 'folder') {
+    showNotification('未找到选中的文件夹', 'error');
+    return;
+  }
+
+  if (folderNode.apiId) {
+    showNotification('该文件夹已保存到服务器', 'success');
+    return;
+  }
+
+  showNotification('正在保存到服务器...', 'success');
+
+  await saveFolderToAPI(folderNode);
+}
+
 async function exportTheme(previewBlob, files, format = 'jpg') {
   if (!previewBlob) {
     console.error('No preview blob to export');
@@ -3306,206 +3816,14 @@ function downloadZip(blob, fileName) {
   URL.revokeObjectURL(url);
 }
 
-// 模块: 本地缓存
-const STORAGE_KEY = 'theme-tool-cache';
-
-function saveToCache(data) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch (error) {
-    console.warn('Failed to save to cache:', error);
-  }
-}
-
-function loadFromCache() {
-  try {
-    const cached = localStorage.getItem(STORAGE_KEY);
-    if (cached) {
-      return JSON.parse(cached);
-    }
-  } catch (error) {
-    console.warn('Failed to load from cache:', error);
-  }
-  return null;
-}
-
-function clearCache() {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch (error) {
-    console.warn('Failed to clear cache:', error);
-  }
-}
-
-function blobToBase64(blob) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.readAsDataURL(blob);
-  });
-}
-
-function base64ToBlob(base64) {
-  return fetch(base64).then(response => response.blob());
-}
-
-async function convertNodeToCache(node) {
-  if (!node) return null;
-
-  const cacheNode = {
-    id: node.id,
-    name: node.name,
-    type: node.type,
-  };
-
-  if (node.type === 'file' && node.file) {
-    try {
-      cacheNode.data = await blobToBase64(node.file);
-    } catch (error) {
-      console.warn('Failed to convert file to base64:', error);
-    }
-  }
-
-  if (node.type === 'folder' && node.children) {
-    cacheNode.children = await Promise.all(node.children.map(child => convertNodeToCache(child)));
-    cacheNode.children = cacheNode.children.filter(Boolean);
-  }
-
-  return cacheNode;
-}
-
-async function convertCacheToNode(cacheNode) {
-  if (!cacheNode) return null;
-
-  const node = {
-    id: cacheNode.id,
-    name: cacheNode.name,
-    type: cacheNode.type,
-  };
-
-  if (cacheNode.type === 'file' && cacheNode.data) {
-    try {
-      const blob = await base64ToBlob(cacheNode.data);
-      node.file = blob;
-      node.url = URL.createObjectURL(blob);
-    } catch (error) {
-      console.warn('Failed to convert base64 to blob:', error);
-    }
-  }
-
-  if (cacheNode.type === 'folder' && cacheNode.children) {
-    node.children = await Promise.all(cacheNode.children.map(child => convertCacheToNode(child)));
-    node.children = node.children.filter(Boolean);
-  }
-
-  return node;
-}
-
-async function createCacheData() {
-  const foldersRoot = state.foldersRoot ? await convertNodeToCache(state.foldersRoot) : null;
-  const zipsRoot = state.zipsRoot ? await convertNodeToCache(state.zipsRoot) : null;
-
-  let wallpaperData = null;
-  if (state.wallpaper && state.wallpaper.startsWith('blob:')) {
-    try {
-      const response = await fetch(state.wallpaper);
-      const blob = await response.blob();
-      wallpaperData = await blobToBase64(blob);
-    } catch (error) {
-      console.warn('Failed to cache wallpaper:', error);
-    }
-  } else if (state.wallpaper && state.wallpaper.startsWith('data:')) {
-    wallpaperData = state.wallpaper;
-  }
-
-  return {
-    foldersRoot,
-    zipsRoot,
-    lastImportedFolderName: state.lastImportedFolderName,
-    settings: state.settings,
-    wallpaper: wallpaperData,
-  };
-}
-
-async function restoreFromCacheData(cacheData) {
-  if (!cacheData) return false;
-
-  try {
-    if (cacheData.foldersRoot) {
-      state.foldersRoot = await convertCacheToNode(cacheData.foldersRoot);
-    }
-    if (cacheData.zipsRoot) {
-      state.zipsRoot = await convertCacheToNode(cacheData.zipsRoot);
-    }
-    if (cacheData.lastImportedFolderName) {
-      state.lastImportedFolderName = cacheData.lastImportedFolderName;
-    }
-    if (cacheData.settings) {
-      state.settings = { ...state.settings, ...cacheData.settings };
-    }
-    if (cacheData.wallpaper && cacheData.wallpaper.startsWith('data:')) {
-      state.wallpaper = cacheData.wallpaper;
-    }
-
-    state.files = [];
-    if (state.foldersRoot && state.foldersRoot.children && state.foldersRoot.children.length > 0) {
-      state.files.push(state.foldersRoot);
-    }
-    if (state.zipsRoot && state.zipsRoot.children && state.zipsRoot.children.length > 0) {
-      state.files.push(state.zipsRoot);
-    }
-
-    renderFileTree();
-    updateSettingsUI();
-
-    if (state.wallpaper && state.wallpaper.startsWith('data:')) {
-      setWallpaper(state.wallpaper);
-    }
-
-    if (state.files.length > 0) {
-      const lastFolder = state.files[state.files.length - 1];
-      if (lastFolder.children && lastFolder.children.length > 0) {
-        const selectedFolder = lastFolder.children[lastFolder.children.length - 1];
-        state.currentFolderName = selectedFolder.name;
-        state.expandedFolders.add('root-folders');
-        state.expandedFolders.add(selectedFolder.id);
-        setSelectedFile(selectedFolder.id);
-
-        const wallpaperInfo = findWallpaper([selectedFolder]);
-        if (wallpaperInfo && wallpaperInfo.url) {
-          setWallpaper(wallpaperInfo.url);
-        }
-
-        const previewFiles = await collectPreviewFilesWithDimensions([selectedFolder]);
-        await fillCustomContainers(previewFiles);
-
-        const iconFiles = collectIconFiles([selectedFolder]);
-        fillIconGrids(iconFiles);
-      }
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Failed to restore from cache:', error);
-    return false;
-  }
-}
-
-async function updateCache() {
-  const cacheData = await createCacheData();
-  saveToCache(cacheData);
-}
-
 // 模块: 初始化
-function init() {
+async function init() {
   updateSettingsUI();
+  // renderGridOverlay();
 
-  const cachedData = loadFromCache();
-  if (cachedData) {
-    restoreFromCacheData(cachedData);
-  }
+  await loadThemesFromAPIOnStartup();
 
-  hideOverlappingRows('18.7%');
+  hideOverlappingRows('21.5%');
 
   document.querySelectorAll('.grid-item-container.custom-container-4, .grid-item-container.custom-container-2').forEach(container => {
     const gridItem = container.querySelector('.grid-item');
@@ -3575,7 +3893,6 @@ function init() {
       const iconFiles = collectIconFiles(parsedFiles);
       fillIconGrids(iconFiles);
 
-      updateCache();
     } catch (error) {
       console.error('Error parsing folder:', error);
     }
@@ -3603,7 +3920,6 @@ function init() {
       const iconFiles = collectIconFiles(parsedFiles);
       fillIconGrids(iconFiles);
 
-      updateCache();
     } catch (error) {
       console.error('Error parsing zip file:', error);
     }
@@ -3643,6 +3959,8 @@ function init() {
   document.getElementById('show-text').addEventListener('change', handleSettingsChange);
 
   document.getElementById('export-btn').addEventListener('click', handleExport);
+
+  document.getElementById('save-to-server-btn').addEventListener('click', handleSaveToServer);
 
   // 更新时间
   function updateTime() {

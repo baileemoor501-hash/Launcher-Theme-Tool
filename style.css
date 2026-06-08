@@ -284,7 +284,6 @@ body {
   background: #2d2d2d;
   border-radius: var(--phone-frame-radius);
   padding: var(--phone-frame-padding);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   overflow: hidden;
   width: var(--phone-width);
   height: var(--phone-height);
@@ -300,6 +299,7 @@ body {
 }
 
 .phone-screen {
+  position: relative;
   background: #1f1f1f;
   border-radius: var(--phone-screen-radius);
   width: 100%;
@@ -320,6 +320,7 @@ body {
   bottom: calc(var(--phone-inner-padding) + var(--phone-frame-padding));
   left: 50%;
   transform: translateX(-50%);
+  z-index: 0;
 }
 
 .wallpaper {
@@ -327,8 +328,8 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: calc(100% - 2 * var(--phone-inner-padding) - 2 * var(--phone-frame-padding));
-  height: calc(100% - 2 * var(--phone-inner-padding) - 2 * var(--phone-frame-padding));
+  width: 100%;
+  height: 100%;
   object-fit: cover;
   border-radius: var(--phone-screen-radius);
   z-index: 0;
@@ -346,13 +347,12 @@ body {
 }
 
 .grid-container {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 5;
-  display: flex;
-  flex-direction: column;
-  min-height: calc(var(--phone-height) * 0.9);
-  justify-content: space-between;
-  gap: calc(var(--phone-width) * 0.067);
 }
 
 .grid-item-container {
@@ -523,9 +523,13 @@ body {
   color: white;
 }
 
+.dock-container .icon-label {
+  opacity: 0;
+}
+
 .circles-container {
   position: absolute;
-  top: calc(var(--phone-height) * 0.7915);
+  top: calc(var(--phone-height) * 0.826);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -812,6 +816,29 @@ body {
 
 .export-btn:hover {
   background: var(--accent-hover);
+}
+
+.save-to-server-btn {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s;
+  margin-bottom: 12px;
+}
+
+.save-to-server-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.save-to-server-btn:active {
+  transform: translateY(0);
 }
 
 .notification {
