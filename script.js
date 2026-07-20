@@ -1,7 +1,4 @@
-// 主题预览图生成工具 - 重构版
-// 纯 HTML、CSS 和 JavaScript 实现
-
-// 模块: API配置
+// API配置
 const API_CONFIG = {
   baseUrl: 'https://launcher-theme-tool.appser.top',
   endpoints: {
@@ -13,6 +10,31 @@ const API_CONFIG = {
     deleteTheme: '/api/bundles/{themeId}',
   }
 };
+
+async function parseResponse(response) {
+  const text = await response.text();
+
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+
+  if (!response.ok) {
+    throw new Error(data.message || `HTTP error! status: ${response.status}`);
+  }
+
+  return data;
+}
+
+function buildUrl(endpoint, params = {}) {
+  let url = API_CONFIG.baseUrl + endpoint;
+  Object.keys(params).forEach(key => {
+    url = url.replace(`{${key}}`, params[key]);
+  });
+  return url;
+}
 
 async function apiRequest(url, options = {}) {
   const defaultOptions = {
@@ -29,20 +51,7 @@ async function apiRequest(url, options = {}) {
 
   try {
     const response = await fetch(url, mergedOptions);
-    const text = await response.text();
-
-    let data;
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = {};
-    }
-
-    if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
-    }
-
-    return data;
+    return await parseResponse(response);
   } catch (error) {
     console.error('API request failed:', error);
     throw error;
@@ -50,121 +59,65 @@ async function apiRequest(url, options = {}) {
 }
 
 async function apiUploadFile(url, file, filename) {
+  let uploadFile = file;
+  if (isImageFile(filename) && (!file.type || file.type === 'application/octet-stream')) {
+    const mimeType = getImageMimeType(filename);
+    if (mimeType) {
+      const arrayBuffer = await file.arrayBuffer();
+      uploadFile = new Blob([arrayBuffer], { type: mimeType });
+    }
+  }
+
   const formData = new FormData();
-  formData.append('file', file, filename);
+  formData.append('file', uploadFile, filename);
 
   try {
     const response = await fetch(url, {
       method: 'POST',
       body: formData,
     });
-
-    const text = await response.text();
-    let data;
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch {
-      data = {};
-    }
-
-    if (!response.ok) {
-      throw new Error(data.message || `HTTP error! status: ${response.status}`);
-    }
-
-    return data;
+    return await parseResponse(response);
   } catch (error) {
     console.error('File upload failed:', error);
     throw error;
   }
 }
 
-function buildUrl(endpoint, params = {}) {
-  let url = API_CONFIG.baseUrl + endpoint;
-  Object.keys(params).forEach(key => {
-    url = url.replace(`{${key}}`, params[key]);
-  });
-  return url;
-}
-
-// 模块: 主题管理API
 async function createTheme(name, type = 'theme') {
   const url = buildUrl(API_CONFIG.endpoints.createTheme);
-  const data = await apiRequest(url, {
+  return apiRequest(url, {
     method: 'POST',
     body: { name, type },
   });
-  return data;
 }
 
 async function listThemes() {
   const url = buildUrl(API_CONFIG.endpoints.listThemes);
-  const data = await apiRequest(url, { method: 'GET' });
-  return data;
+  return apiRequest(url, { method: 'GET' });
 }
 
 async function getTheme(themeId) {
   const url = buildUrl(API_CONFIG.endpoints.getTheme, { themeId });
-  const data = await apiRequest(url, { method: 'GET' });
-  return data;
+  return apiRequest(url, { method: 'GET' });
 }
 
 async function uploadThemeFile(themeId, file, filename) {
-  const url = buildUrl(API_CONFIG.endpoints.uploadFile, { themeId }) + `?filename=${encodeURIComponent(filename)}`;
-  const data = await apiUploadFile(url, file, filename);
-  return data;
+  const baseUrl = buildUrl(API_CONFIG.endpoints.uploadFile, { themeId });
+  const url = `${baseUrl}?filename=${encodeURIComponent(filename)}`;
+  return apiUploadFile(url, file, filename);
 }
 
 async function confirmThemeUpload(themeId) {
   const url = buildUrl(API_CONFIG.endpoints.confirmUpload, { themeId });
-  const data = await apiRequest(url, { method: 'POST' });
-  return data;
+  return apiRequest(url, { method: 'POST' });
 }
 
 async function deleteTheme(themeId) {
   const url = buildUrl(API_CONFIG.endpoints.deleteTheme, { themeId });
-  const data = await apiRequest(url, { method: 'DELETE' });
-  return data;
+  return apiRequest(url, { method: 'DELETE' });
 }
 
-// 模块: 文件夹同步API
-async function saveFolderToAPI(folderNode) {
-  if (!folderNode || folderNode.type !== 'folder') {
-    throw new Error('Invalid folder node');
-  }
-
-  try {
-    const createResult = await createTheme(folderNode.name, 'theme');
-    const themeId = createResult.id;
-    folderNode.apiId = themeId;
-    console.log('Created theme with ID:', themeId);
-
-    const filesToUpload = [];
-    collectFilesFromNode(folderNode, filesToUpload);
-    console.log('Files to upload:', filesToUpload.map(f => f.name));
-
-    if (filesToUpload.length === 0) {
-      showNotification('没有找到可上传的文件', 'warning');
-      return { success: false, error: new Error('No files to upload') };
-    }
-
-    for (const fileItem of filesToUpload) {
-      console.log('Uploading file:', fileItem.name);
-      await uploadThemeFile(themeId, fileItem.file, fileItem.name);
-      console.log('Uploaded:', fileItem.name);
-    }
-
-    await confirmThemeUpload(themeId);
-    console.log('Confirmed upload for theme:', themeId);
-
-    showNotification(`文件夹 "${folderNode.name}" 已保存到服务器`, 'success');
-    return { success: true, themeId, folderNode };
-  } catch (error) {
-    console.error('Failed to save folder to API:', error);
-    showNotification(`保存失败: ${error.message}`, 'error');
-    return { success: false, error };
-  }
-}
-
+// 模块: 文件夹同步 API
 function collectFilesFromNode(node, files, parentPath = '', isRoot = true) {
   if (node.type === 'file' && node.file) {
     const fullPath = parentPath ? `${parentPath}/${node.name}` : node.name;
@@ -178,25 +131,139 @@ function collectFilesFromNode(node, files, parentPath = '', isRoot = true) {
   }
 }
 
+function cleanFileKey(key) {
+  let cleanKey = key;
+  console.log('cleanFileKey - input:', key);
+
+  if (cleanKey.startsWith('themes/')) {
+    cleanKey = cleanKey.split('/').slice(2).join('/');
+  } else if (cleanKey.startsWith('/api/') || cleanKey.startsWith('api/')) {
+    const parts = cleanKey.split('/');
+    const fileIndex = parts.indexOf('files');
+    if (fileIndex !== -1 && fileIndex + 1 < parts.length) {
+      cleanKey = parts.slice(fileIndex + 1).join('/');
+    }
+  }
+
+  return cleanKey;
+}
+
+function buildFileUrl(fileInfo, fileName, themeId) {
+  const fileUrl = fileInfo.url || fileInfo.publicUrl || fileInfo.URL || fileInfo.public_url || '';
+
+  if (fileUrl) {
+    if (fileUrl.startsWith('http')) {
+      return fileUrl;
+    }
+
+    let normalizedUrl = fileUrl.startsWith('/') ? fileUrl : `/${fileUrl}`;
+    if (normalizedUrl.startsWith('/api/') && API_CONFIG.baseUrl.endsWith('/api')) {
+      normalizedUrl = normalizedUrl.substring(4);
+    }
+    return `${API_CONFIG.baseUrl}${normalizedUrl}`;
+  }
+
+  const storedFileName = fileInfo.name || fileName;
+  return `${API_CONFIG.baseUrl}/api/bundles/${themeId}/files/${encodeURIComponent(storedFileName)}`;
+}
+
+function buildR2Url(r2Prefix, cleanKey) {
+  if (!r2Prefix) {
+    return '';
+  }
+
+  const prefix = r2Prefix.replace(/^\/|\/$/g, '').replace(/,$/, '');
+  const encodedPath = cleanKey.split('/').map(encodeURIComponent).join('/');
+  return `${API_CONFIG.baseUrl}/${prefix}/${encodedPath}`;
+}
+
+/**
+ * 将文件夹节点保存到服务器
+ * @param {Object} folderNode - 文件夹节点对象
+ * @returns {Promise<Object>} 保存结果 { success: boolean, themeId?: string, folderNode?: Object, error?: Error }
+ */
+async function saveFolderToAPI(folderNode) {
+  if (!folderNode || folderNode.type !== 'folder') {
+    throw new Error('Invalid folder node');
+  }
+
+  try {
+    const createResult = await createTheme(folderNode.name, 'theme');
+    const themeId = createResult.id;
+    folderNode.apiId = themeId;
+    if (createResult.name) {
+      folderNode.name = createResult.name;
+    }
+
+    const filesToUpload = [];
+    collectFilesFromNode(folderNode, filesToUpload);
+    console.log('Files to upload:', filesToUpload.map(f => f.name));
+
+    if (filesToUpload.length === 0) {
+      showNotification('没有找到可上传的文件', 'warning');
+      return { success: false, error: new Error('No files to upload') };
+    }
+
+    for (const fileItem of filesToUpload) {
+      console.log('Uploading:', fileItem.name, '- type:', fileItem.file.type, '- size:', fileItem.file.size);
+      const uploadResult = await uploadThemeFile(themeId, fileItem.file, fileItem.name);
+      console.log('Uploaded:', fileItem.name, '- result:', JSON.stringify(uploadResult));
+    }
+
+    await confirmThemeUpload(themeId);
+
+    const loadResult = await loadThemeFilesFromAPI(themeId);
+    console.log('Load theme result:', JSON.stringify(loadResult));
+    if (loadResult.success && loadResult.folderNode) {
+      const index = state.foldersRoot.children.findIndex(f => f.id === folderNode.id);
+      if (index !== -1) {
+        state.foldersRoot.children[index] = loadResult.folderNode;
+      }
+      folderNode = loadResult.folderNode;
+
+      let imageInfo = '';
+      loadResult.folderNode.children.forEach((file, idx) => {
+        const fileType = file.name.split('.').pop().toUpperCase();
+        imageInfo += `${idx + 1}. ${file.name} (${fileType}) - ${file.url}\n`;
+      });
+
+      if (imageInfo) {
+        console.log('图片访问链接:\n', imageInfo);
+        showNotification(`文件夹 "${folderNode.name}" 已保存到服务器\n图片链接已输出到控制台`, 'success');
+      } else {
+        showNotification(`文件夹 "${folderNode.name}" 已保存到服务器`, 'success');
+      }
+    } else {
+      showNotification(`文件夹 "${folderNode.name}" 已保存到服务器`, 'success');
+    }
+
+    return { success: true, themeId, folderNode };
+  } catch (error) {
+    console.error('Failed to save folder to API:', error);
+    showNotification(`保存失败: ${error.message}`, 'error');
+    return { success: false, error };
+  }
+}
+
+/**
+ * 从服务器加载主题列表
+ * @returns {Promise<Object>} 加载结果 { success: boolean, themes?: Array, error?: Error }
+ */
 async function loadThemesFromAPI() {
   try {
     const result = await listThemes();
     const themes = result.data || [];
 
-    const folderNodes = [];
-    for (const theme of themes) {
-      const folderNode = {
-        id: `api-folder-${theme.id}`,
-        apiId: theme.id,
-        name: theme.name,
-        type: 'folder',
-        children: [],
-        r2Prefix: theme.r2Prefix,
-        itemCount: theme.itemCount,
-        createdAt: theme.createdAt,
-      };
-      folderNodes.push(folderNode);
-    }
+    const folderNodes = themes.map(theme => ({
+      id: `api-folder-${theme.id}`,
+      apiId: theme.id,
+      name: theme.name,
+      type: 'folder',
+      children: [],
+      r2Prefix: theme.r2Prefix,
+      itemCount: theme.itemCount,
+      createdAt: theme.createdAt,
+    }));
 
     return { success: true, themes: folderNodes };
   } catch (error) {
@@ -205,11 +272,14 @@ async function loadThemesFromAPI() {
   }
 }
 
+/**
+ * 从服务器加载主题的文件列表
+ * @param {string} themeId - 主题 ID
+ * @returns {Promise<Object>} 加载结果 { success: boolean, folderNode?: Object, error?: Error }
+ */
 async function loadThemeFilesFromAPI(themeId) {
   try {
     const result = await getTheme(themeId);
-    console.log('Loaded theme from API:', result);
-    console.log('Theme r2Prefix:', result.r2Prefix);
 
     const folderNode = {
       id: `api-folder-${themeId}`,
@@ -222,42 +292,31 @@ async function loadThemeFilesFromAPI(themeId) {
       createdAt: result.createdAt,
     };
 
-    console.log('Files from API:', result.files);
     if (result.files && result.files.length > 0) {
-      console.log('Found', result.files.length, 'files');
-      for (const fileInfo of result.files) {
+      for (let i = 0; i < result.files.length; i++) {
+        let fileInfo = result.files[i];
+
+        if (typeof fileInfo === 'string') {
+          try {
+            fileInfo = JSON.parse(fileInfo);
+            result.files[i] = fileInfo;
+          } catch (e) {
+            console.error('Failed to parse fileInfo string:', fileInfo);
+            continue;
+          }
+        }
 
         const key = fileInfo.key || fileInfo.filename || fileInfo.path || fileInfo.name;
         if (!key) {
-          console.log('Skipping file without key:', fileInfo);
           continue;
         }
 
-        const fileName = key.split('/').pop();
-        const fileUrl = fileInfo.url || fileInfo.publicUrl || '';
-        console.log('Final URL for file:', fileName, '->', fileUrl);
+        const cleanKey = cleanFileKey(key);
+        const fileName = cleanKey.split('/').pop();
+        const finalUrl = buildFileUrl(fileInfo, fileName, themeId, result.r2Prefix);
+        const r2Url = buildR2Url(result.r2Prefix, cleanKey);
 
-        let finalUrl = '';
-        let r2Url = '';
-
-        if (fileUrl) {
-          if (fileUrl.startsWith('http')) {
-            finalUrl = fileUrl;
-          } else {
-            finalUrl = API_CONFIG.baseUrl + (fileUrl.startsWith('/') ? '' : '/') + fileUrl;
-          }
-        } else if (key) {
-          const cleanKey = key.startsWith('themes/') ? key.split('/').slice(2).join('/') : key;
-          finalUrl = `${API_CONFIG.baseUrl}/api/bundles/${themeId}/files/${encodeURIComponent(cleanKey)}`;
-        }
-
-        if (result.r2Prefix && key) {
-          const cleanKey = key.startsWith('themes/') ? key.split('/').slice(2).join('/') : key;
-          r2Url = `${API_CONFIG.baseUrl}/${result.r2Prefix}/${encodeURIComponent(cleanKey)}`;
-        }
-
-        console.log('Final URL constructed:', finalUrl);
-        console.log('R2 URL constructed:', r2Url);
+        console.log('File info from server:', JSON.stringify(fileInfo));
 
         const fileNode = {
           id: `api-file-${key}`,
@@ -267,14 +326,13 @@ async function loadThemeFilesFromAPI(themeId) {
           r2Url: r2Url,
           key: key,
           originalUrl: finalUrl,
+          _rawFileInfo: fileInfo,
         };
         folderNode.children.push(fileNode);
       }
-      console.log('Processed', folderNode.children.length, 'files');
-    } else {
-      console.log('No files found in theme');
     }
 
+    console.log('Loaded theme files count:', folderNode.children.length);
     return { success: true, folderNode };
   } catch (error) {
     console.error('Failed to load theme files from API:', error);
@@ -282,6 +340,9 @@ async function loadThemeFilesFromAPI(themeId) {
   }
 }
 
+/**
+ * 启动时从服务器加载主题列表并更新 UI
+ */
 async function loadThemesFromAPIOnStartup() {
   try {
     const result = await loadThemesFromAPI();
@@ -696,6 +757,8 @@ function renderTreeNode(node, level) {
   const hasChildren = isFolder && node.children && node.children.length > 0;
   const isExpanded = state.expandedFolders.has(node.id);
   const isRootLevel = level === 0;
+
+
 
   if (hasChildren && isExpanded) {
     const childFolders = node.children.filter(child => child.type === 'folder');
@@ -1218,7 +1281,6 @@ async function handleTreeNodeClick(e) {
     }
 
     if (folderNode) {
-      console.log('Processing folder:', folderNode.name, 'apiId:', folderNode.apiId, 'has children:', folderNode.children && folderNode.children.length > 0);
       if (folderNode.apiId && !folderNode.children.length) {
         const result = await loadThemeFilesFromAPI(folderNode.apiId);
 
@@ -1242,7 +1304,6 @@ async function handleTreeNodeClick(e) {
       }
 
       state.expandedFolders.add(id);
-      renderFileTree();
 
       state.currentFolderName = folderNode.name;
 
@@ -1257,17 +1318,46 @@ async function handleTreeNodeClick(e) {
       }
       collectFileNodes(folderNode);
 
-      for (const fileNode of allFileNodes) {
-        if (fileNode.type === 'file' && fileNode.url && isImageFile(fileNode.name)) {
-          const blobUrl = await fetchImageWithCors(fileNode.url);
-          if (blobUrl) {
-            fileNode.url = blobUrl;
-            fileNode.blobUrl = blobUrl;
-          } else {
-            console.warn('Failed to fetch image, using original URL:', fileNode.name);
+      const fetchPromises = allFileNodes.map(async (fileNode) => {
+        if (fileNode.type === 'file' && isImageFile(fileNode.name)) {
+          const apiUrl = fileNode.url;
+          const r2Url = fileNode.r2Url;
+
+          if (!apiUrl && !r2Url) {
+            return;
+          }
+
+          let result = null;
+
+          if (r2Url) {
+            result = await fetchImageWithCors(r2Url);
+            if (result) {
+              fileNode.file = result.blob;
+              fileNode.url = result.blobUrl;
+              console.log('Using R2 URL for image:', fileNode.name);
+              return;
+            }
+            console.warn('R2 URL failed, trying API URL:', fileNode.name);
+          }
+
+          if (apiUrl) {
+            result = await fetchImageWithCors(apiUrl);
+            if (result) {
+              fileNode.file = result.blob;
+              fileNode.url = result.blobUrl;
+              console.log('Using API URL for image:', fileNode.name);
+            } else {
+              console.error('Both R2 URL and API URL failed for:', fileNode.name);
+              showNotification(`图片 "${fileNode.name}" 加载失败，请检查服务器配置`, 'error');
+            }
           }
         }
-      }
+      });
+
+      await Promise.all(fetchPromises);
+
+      const fetchedCount = allFileNodes.filter(n => n.type === 'file' && isImageFile(n.name) && n.file).length;
+      console.log('Theme loaded:', folderNode.name, 'files:', allFileNodes.length, 'fetched:', fetchedCount);
 
       renderFileTree();
 
@@ -1280,9 +1370,7 @@ async function handleTreeNodeClick(e) {
       fillCustomContainers(previewFiles);
 
       const iconFiles = collectIconFiles(allFileNodes);
-
       fillIconGrids(iconFiles);
-      console.log('Completed loading theme:', folderNode.name);
     }
   }
 }
@@ -1311,14 +1399,15 @@ async function handleDeleteFolder(e) {
   const folderId = e.currentTarget.dataset.id;
 
   let folderToDelete = null;
-  let deletedFromRoot = null;
+  let rootType = null;
+  let rootIndex = -1;
 
   if (state.foldersRoot && state.foldersRoot.children) {
     const index = state.foldersRoot.children.findIndex(f => f.id === folderId);
     if (index !== -1) {
       folderToDelete = state.foldersRoot.children[index];
-      state.foldersRoot.children.splice(index, 1);
-      deletedFromRoot = 'folders';
+      rootType = 'folders';
+      rootIndex = index;
     }
   }
 
@@ -1326,29 +1415,38 @@ async function handleDeleteFolder(e) {
     const index = state.zipsRoot.children.findIndex(f => f.id === folderId);
     if (index !== -1) {
       folderToDelete = state.zipsRoot.children[index];
-      state.zipsRoot.children.splice(index, 1);
-      deletedFromRoot = 'zips';
+      rootType = 'zips';
+      rootIndex = index;
     }
   }
 
-  if (folderToDelete && folderToDelete.apiId) {
+  if (!folderToDelete) {
+    return;
+  }
+
+  if (folderToDelete.apiId) {
     try {
       await deleteTheme(folderToDelete.apiId);
-      showNotification('服务器上的文件夹已删除', 'success');
     } catch (error) {
-      console.warn('Failed to delete from API:', error);
+      console.error('Failed to delete from API:', error);
+      showNotification('删除失败：无法连接服务器', 'error');
+      return;
     }
+  }
+
+  if (rootType === 'folders' && state.foldersRoot && state.foldersRoot.children) {
+    state.foldersRoot.children.splice(rootIndex, 1);
+  } else if (rootType === 'zips' && state.zipsRoot && state.zipsRoot.children) {
+    state.zipsRoot.children.splice(rootIndex, 1);
   }
 
   state.expandedFolders.delete(folderId);
 
-  if (folderToDelete) {
-    const folderName = folderToDelete.name;
-    state.importedResources = state.importedResources.filter(res =>
-      !(res.type === 'folder' && res.name === folderName) &&
-      !(res.type === 'zip' && res.name.replace(/\.zip$/i, '') === folderName)
-    );
-  }
+  const folderName = folderToDelete.name;
+  state.importedResources = state.importedResources.filter(res =>
+    !(res.type === 'folder' && res.name === folderName) &&
+    !(res.type === 'zip' && res.name.replace(/\.zip$/i, '') === folderName)
+  );
 
   if (state.selectedFile === folderId) {
     state.selectedFile = null;
@@ -1689,7 +1787,12 @@ async function parseZipFile(zipFile) {
         continue;
       }
 
-      const blob = await file.async('blob');
+      let blob = await file.async('blob');
+      const mimeType = getImageMimeType(fileName);
+      if (mimeType && (!blob.type || blob.type === 'application/octet-stream')) {
+        const arrayBuffer = await blob.arrayBuffer();
+        blob = new Blob([arrayBuffer], { type: mimeType });
+      }
       const url = URL.createObjectURL(blob);
 
       const fileNode = {
@@ -1833,6 +1936,18 @@ function parseFiles(fileList) {
 function isImageFile(filename) {
   const ext = filename.toLowerCase().split('.').pop();
   return ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext || '');
+}
+
+function getImageMimeType(filename) {
+  const ext = filename.toLowerCase().split('.').pop();
+  const mimeTypes = {
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'webp': 'image/webp',
+    'gif': 'image/gif',
+  };
+  return mimeTypes[ext] || '';
 }
 
 function getImageDimensions(url) {
@@ -2173,69 +2288,59 @@ function collectIconFiles(nodes) {
 
 async function fetchImageAsBlobUrl(url) {
   try {
-    console.log('Fetching image:', url);
     const response = await fetch(url, {
       method: 'GET',
-      credentials: 'same-origin'
+      mode: 'cors',
+      cache: 'no-cache'
     });
 
-    console.log('Response status:', response.status, response.statusText);
-
     if (!response.ok) {
-      console.warn('Image fetch failed:', url, response.status, response.statusText);
       return null;
     }
 
     const contentType = response.headers.get('content-type');
-    console.log('Content-Type:', contentType);
+    const isImageType = contentType && contentType.startsWith('image/');
 
-    const blob = await response.blob();
-    console.log('Blob size:', blob.size, 'bytes');
+    let blob = await response.blob();
+
+    if (!isImageType) {
+      const filename = url.split('/').pop().split('?')[0];
+      const mimeType = getImageMimeType(filename);
+      if (mimeType) {
+        const arrayBuffer = await blob.arrayBuffer();
+        blob = new Blob([arrayBuffer], { type: mimeType });
+      }
+    }
 
     const blobUrl = URL.createObjectURL(blob);
-    console.log('Created blob URL:', blobUrl);
-
     return blobUrl;
   } catch (error) {
-    console.warn('Image fetch error:', url, error.message);
     return null;
   }
 }
 
 async function prefetchImagesForDisplay(fileNodes) {
   const promises = fileNodes.map(async (fileNode) => {
-    if (fileNode.url && isImageFile(fileNode.name)) {
-      console.log('Processing file:', fileNode.name, 'with URL:', fileNode.url);
-
-      if (!fileNode.url || fileNode.url.trim() === '') {
-        console.error('File has empty URL:', fileNode.name);
+    if ((fileNode.url || fileNode.r2Url) && isImageFile(fileNode.name)) {
+      const bestUrl = fileNode.r2Url || fileNode.url;
+      if (!bestUrl || bestUrl.trim() === '') {
         return fileNode;
       }
 
       let blobUrl = null;
 
-      if (fileNode.r2Url) {
-        console.log('Trying R2 URL:', fileNode.r2Url);
-        blobUrl = await fetchImageAsBlobUrl(fileNode.r2Url);
+      if (fileNode.url) {
+        blobUrl = await fetchImageAsBlobUrl(fileNode.url);
       }
 
-      if (!blobUrl && fileNode.url) {
-        console.log('Trying regular URL:', fileNode.url);
-        blobUrl = await fetchImageAsBlobUrl(fileNode.url);
+      if (!blobUrl && fileNode.r2Url) {
+        blobUrl = await fetchImageAsBlobUrl(fileNode.r2Url);
       }
 
       if (blobUrl) {
         fileNode.blobUrl = blobUrl;
         fileNode.url = blobUrl;
-        console.log('Successfully created blob URL for:', fileNode.name);
-      } else {
-        console.warn('Failed to prefetch image, will use original URL:', fileNode.url);
-        if (!fileNode.url.startsWith('http')) {
-          console.error('URL is not valid:', fileNode.url);
-        }
       }
-    } else {
-      console.log('Skipping file (not image or no URL):', fileNode.name, 'hasUrl:', !!fileNode.url, 'isImage:', isImageFile(fileNode.name));
     }
     return fileNode;
   });
@@ -2261,24 +2366,53 @@ async function testImageUrl(fileName, url) {
 
 async function fetchImageWithCors(url) {
   try {
+    console.log('fetchImageWithCors - actual URL:', url);
     const response = await fetch(url, {
       method: 'GET',
       mode: 'cors',
       cache: 'no-cache'
     });
 
-    if (!response.ok) {
-      console.error('Fetch failed:', url, response.status);
+    const contentType = response.headers.get('content-type');
+    console.log('fetchImageWithCors - status:', response.status, 'Content-Type:', contentType);
+    const isImageType = contentType && contentType.startsWith('image/');
+
+    const blob = await response.blob();
+
+    if (!isImageType) {
+      console.error('Server returned non-image content type:', contentType, 'URL:', url);
+
+      const textContent = await blob.text();
+      if (textContent && textContent.length < 2000) {
+        console.error('Response content preview:', textContent.substring(0, 500));
+      }
+
+      showNotification(`图片加载失败：服务器返回 ${contentType}，请检查服务器配置`, 'error');
       return null;
     }
 
-    const blob = await response.blob();
     const blobUrl = URL.createObjectURL(blob);
-    return blobUrl;
+    return { blobUrl, blob };
   } catch (error) {
-    console.error('Fetch error:', url, error.message);
+    console.log('Fetch error:', error.message, 'URL:', url);
     return null;
   }
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result;
+      if (typeof dataUrl === 'string') {
+        resolve(dataUrl);
+      } else {
+        reject(new Error('Failed to convert blob to base64'));
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 
 async function prefetchImagesWithFallback(fileNodes) {
@@ -2287,10 +2421,8 @@ async function prefetchImagesWithFallback(fileNodes) {
   for (const fileNode of fileNodes) {
     if (fileNode.type === 'file' && isImageFile(fileNode.name)) {
       if (!fileNode.url || !fileNode.url.startsWith('blob:') && !fileNode.url.startsWith('http')) {
-        console.warn('File URL is invalid, trying to reconstruct:', fileNode.name);
         if (fileNode.originalUrl && fileNode.originalUrl.startsWith('http')) {
           fileNode.url = fileNode.originalUrl;
-          console.log('Reverted to original URL:', fileNode.url);
         }
       }
     }
@@ -3390,8 +3522,6 @@ function fillIconGrids(imageFiles) {
 
   const skipPositions = ['11.5%', '24.5%', '37.5%', '50.5%'];
 
-
-
   // 填充网格
   gridContainers.forEach(container => {
     const styleTop = container.style.top;
@@ -3816,10 +3946,89 @@ function downloadZip(blob, fileName) {
   URL.revokeObjectURL(url);
 }
 
+// 处理从颜色图标工具导入预览图数据
+async function handlePreviewImport() {
+  const params = new URLSearchParams(window.location.search);
+  const shouldImport = params.get('import');
+
+  if (shouldImport === 'preview') {
+    try {
+      const previewDataStr = localStorage.getItem('previewImageData');
+      if (!previewDataStr) {
+        showNotification('没有找到预览图数据', 'warning');
+        return;
+      }
+
+      const previewData = JSON.parse(previewDataStr);
+
+      // 创建虚拟文件夹结构
+      const folderNode = {
+        id: `folder-preview-${previewData.timestamp}`,
+        name: '预览图资源',
+        type: 'folder',
+        children: [],
+      };
+
+      // 添加预览图作为壁纸
+      if (previewData.previewImage) {
+        const wallpaperNode = {
+          id: `file-wallpaper-${previewData.timestamp}`,
+          name: 'wallpaper.jpg',
+          type: 'file',
+          url: previewData.previewImage,
+        };
+        folderNode.children.push(wallpaperNode);
+      }
+
+      // 添加所有图标
+      if (previewData.icons && previewData.icons.length > 0) {
+        previewData.icons.forEach((icon, index) => {
+          const iconNode = {
+            id: `file-icon-${previewData.timestamp}-${index}`,
+            name: icon.name,
+            type: 'file',
+            url: icon.data,
+          };
+          folderNode.children.push(iconNode);
+        });
+      }
+
+      // 设置文件状态
+      state.expandedFolders.clear();
+      state.expandedFolders.add(folderNode.id);
+      state.currentFolderName = folderNode.name;
+      setSelectedFile(folderNode.id);
+
+      setFiles([folderNode]);
+
+      // 设置壁纸
+      if (previewData.previewImage) {
+        setWallpaper(previewData.previewImage);
+      }
+
+      // 填充图标网格
+      const iconFiles = collectIconFiles([folderNode]);
+      fillIconGrids(iconFiles);
+
+      // 清理 localStorage
+      localStorage.removeItem('previewImageData');
+
+      showNotification('预览图数据导入成功！', 'success');
+
+    } catch (error) {
+      console.error('Failed to import preview data:', error);
+      showNotification('预览图数据导入失败', 'error');
+    }
+  }
+}
+
 // 模块: 初始化
 async function init() {
   updateSettingsUI();
   // renderGridOverlay();
+
+  // 检查是否需要从颜色图标工具导入预览图数据
+  await handlePreviewImport();
 
   await loadThemesFromAPIOnStartup();
 
@@ -3957,9 +4166,7 @@ async function init() {
   document.getElementById('icon-size').addEventListener('input', handleSettingsChange);
   document.getElementById('show-grid').addEventListener('change', handleSettingsChange);
   document.getElementById('show-text').addEventListener('change', handleSettingsChange);
-
   document.getElementById('export-btn').addEventListener('click', handleExport);
-
   document.getElementById('save-to-server-btn').addEventListener('click', handleSaveToServer);
 
   // 更新时间
@@ -4011,10 +4218,74 @@ async function init() {
   updateTime();
   updateDate();
   scheduleTimeUpdate();
-
   updateOverlappingIcons();
   addCustomContainerDragListeners();
 }
 
+function initToolPanel() {
+  const toolItems = document.querySelectorAll('.tool-item');
+  const widgetIframe = document.getElementById('widget-iframe');
+  const previewToolContent = document.getElementById('preview-tool-content');
+
+  const toolUrls = {
+    'widget-editor': 'https://baileemoor501-hash.github.io/WidgetTool/',
+    'color-icon': 'ColorIconTheme_2026_0610/index.html',
+    'svg-generator': 'https://svgagent.pages.dev/',
+    'svg-parallax': 'https://appser.top/web_tool_wallpaper/v1/'
+  };
+
+  function saveToolState(toolType) {
+    localStorage.setItem('lastActiveTool', toolType);
+  }
+
+  function getSavedToolState() {
+    return localStorage.getItem('lastActiveTool');
+  }
+
+  function switchTool(toolType) {
+    toolItems.forEach(i => {
+      i.classList.remove('active');
+      const badge = i.querySelector('.tool-badge');
+      if (badge) {
+        badge.remove();
+      }
+    });
+
+    const activeItem = document.querySelector(`[data-tool="${toolType}"]`);
+    if (activeItem) {
+      activeItem.classList.add('active');
+      const badge = document.createElement('span');
+      badge.className = 'tool-badge';
+      badge.textContent = '当前';
+      activeItem.appendChild(badge);
+    }
+
+    if (toolType === 'preview-tool') {
+      widgetIframe.style.display = 'none';
+      previewToolContent.style.display = 'flex';
+    } else if (toolUrls[toolType]) {
+      widgetIframe.src = toolUrls[toolType];
+      widgetIframe.style.display = 'block';
+      previewToolContent.style.display = 'none';
+    }
+  }
+
+  toolItems.forEach(item => {
+    item.addEventListener('click', function () {
+      const toolType = this.dataset.tool;
+      saveToolState(toolType);
+      switchTool(toolType);
+    });
+  });
+
+  const savedTool = getSavedToolState();
+  if (savedTool && (savedTool === 'preview-tool' || savedTool === 'color-icon')) {
+    switchTool(savedTool);
+  }
+}
+
 // 页面加载完成后初始化
-window.addEventListener('DOMContentLoaded', init);
+window.addEventListener('DOMContentLoaded', function () {
+  init();
+  initToolPanel();
+});

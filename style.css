@@ -38,6 +38,81 @@ body {
   overflow: hidden;
 }
 
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+#preview-tool-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.tool-panel {
+  width: 200px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tool-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.tool-icon {
+  font-size: 16px;
+}
+
+.tool-items {
+  padding: 12px;
+}
+
+.tool-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.tool-item:last-child {
+  margin-bottom: 0;
+}
+
+.tool-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tool-item.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.tool-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 10px;
+}
+
 .sidebar {
   width: 340px;
   background: var(--bg-secondary);
