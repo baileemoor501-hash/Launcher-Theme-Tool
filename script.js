@@ -4166,8 +4166,70 @@ async function init() {
   document.getElementById('icon-size').addEventListener('input', handleSettingsChange);
   document.getElementById('show-grid').addEventListener('change', handleSettingsChange);
   document.getElementById('show-text').addEventListener('change', handleSettingsChange);
+  document.getElementById('show-indicator').addEventListener('change', function () {
+    const circlesContainer = document.querySelector('.circles-container');
+    if (circlesContainer) {
+      if (this.checked) {
+        circlesContainer.classList.remove('hidden');
+      } else {
+        circlesContainer.classList.add('hidden');
+      }
+    }
+  });
   document.getElementById('export-btn').addEventListener('click', handleExport);
   document.getElementById('save-to-server-btn').addEventListener('click', handleSaveToServer);
+
+  // Dock栏设置
+  const dockToggle = document.getElementById('dock-toggle');
+  const dockSubSettings = document.getElementById('dock-sub-settings');
+  const dockBar = document.getElementById('dock-bar');
+
+  function updateDockBarStyle() {
+    if (!dockBar) return;
+    const bgColor = document.getElementById('dock-bg-color').value;
+    const opacity = parseInt(document.getElementById('dock-opacity').value) / 100;
+    const radius = parseInt(document.getElementById('dock-radius').value);
+    dockBar.style.background = bgColor;
+    dockBar.style.opacity = opacity;
+    dockBar.style.borderRadius = radius + 'px';
+  }
+
+  if (dockToggle && dockSubSettings) {
+    dockToggle.addEventListener('change', function () {
+      if (dockToggle.checked) {
+        dockSubSettings.classList.add('active');
+        if (dockBar) dockBar.classList.add('active');
+        updateDockBarStyle();
+      } else {
+        dockSubSettings.classList.remove('active');
+        if (dockBar) dockBar.classList.remove('active');
+      }
+    });
+  }
+
+  document.getElementById('dock-opacity').addEventListener('input', function () {
+    document.getElementById('dock-opacity-value').textContent = this.value + '%';
+    updateDockBarStyle();
+  });
+
+  document.getElementById('dock-radius').addEventListener('input', function () {
+    document.getElementById('dock-radius-value').textContent = this.value;
+    updateDockBarStyle();
+  });
+
+  document.getElementById('dock-bg-color').addEventListener('input', function () {
+    const value = this.value.toUpperCase();
+    document.getElementById('dock-bg-color-value').value = value;
+    updateDockBarStyle();
+  });
+
+  document.getElementById('dock-bg-color-value').addEventListener('input', function () {
+    const validColor = validateHexColor(this.value);
+    if (validColor) {
+      document.getElementById('dock-bg-color').value = validColor;
+      updateDockBarStyle();
+    }
+  });
 
   // 更新时间
   function updateTime() {

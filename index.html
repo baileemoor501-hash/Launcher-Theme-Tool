@@ -72,7 +72,6 @@
 
           <div class="phone-simulator">
             <div class="phone-frame" id="phone-frame">
-              <div class="phone-inner">
                 <div class="phone-screen">
                   <div class="status-bar">
                     <span id="current-time">9:41</span>
@@ -87,7 +86,6 @@
                         <rect x="9" y="3" width="4" height="3" />
                       </svg></span>
                   </div>
-                  <div class="phone-content"></div>
                   <img class="wallpaper" id="wallpaper" alt="壁纸" style="display: none" />
                   <div class="grid-container" id="grid-container">
                     <!-- 4x2组件 -->
@@ -289,6 +287,9 @@
                       <div class="circle"></div>
                     </div>
 
+                    <!-- dock栏背景 -->
+                    <div class="dock-bar" id="dock-bar"></div>
+
                     <!-- dock栏 -->
                     <div class="grid-item-container dock-container" style="top: 93.5%; left: 16.2%;">
                       <div class="grid-item"></div>
@@ -308,7 +309,6 @@
                     </div>
                   </div>
                 </div>
-              </div>
             </div>
           </div>
 
@@ -338,6 +338,16 @@
               <span>网格显示</span>
               <label class="toggle">
                 <input type="checkbox" id="show-grid" checked />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="toggle-row">
+              <span>指示器显示</span>
+              <label class="toggle">
+                <input type="checkbox" id="show-indicator" checked />
                 <span class="toggle-slider"></span>
               </label>
             </div>
@@ -392,6 +402,39 @@
                 <option value="720x1560">720×1560</option>
                 <option value="360x780">360×780</option>
               </select>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <div class="toggle-row">
+              <span>Dock栏</span>
+              <label class="toggle">
+                <input type="checkbox" id="dock-toggle" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="dock-sub-settings" id="dock-sub-settings">
+              <div class="color-picker-row">
+                <span class="color-label">背景颜色</span>
+                <div class="color-picker-right">
+                  <input type="color" id="dock-bg-color" value="#FFFFFF" />
+                  <input type="text" class="color-value-input" id="dock-bg-color-value" value="#FFFFFF" />
+                </div>
+              </div>
+              <div class="slider-row">
+                <span class="slider-label">不透明度</span>
+                <div class="slider-container">
+                  <input type="range" id="dock-opacity" min="0" max="100" value="40" />
+                  <span class="slider-value" id="dock-opacity-value">40%</span>
+                </div>
+              </div>
+              <div class="slider-row">
+                <span class="slider-label">圆角</span>
+                <div class="slider-container">
+                  <input type="range" id="dock-radius" min="0" max="100" value="20" />
+                  <span class="slider-value" id="dock-radius-value">20</span>
+                </div>
+              </div>
             </div>
           </div>
 
